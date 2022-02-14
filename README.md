@@ -22,3 +22,7 @@ the Stage 1 folder includes two folders: Manuscript and Code.
 The code will be added to a subsequent folder with the associated results upon completion of analyses.
 
 
+
+For information regarding this content please contact demidenm@umich.edu
+
+
