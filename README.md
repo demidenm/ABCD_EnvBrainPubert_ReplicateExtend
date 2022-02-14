@@ -8,13 +8,14 @@ The project is comprised of two steps: Stage 1 (preregistration) and Stage 2 (re
 
 ## Stage 1 preregistration 
 the Stage 1 folder includes two folders: Manuscript and Code. 
-  •	*Manuscript*: this folder includes the initial version of the manuscript that covers the Abstract, Introduction, Methods, and proposed Analyses. It also includes the effects from the original paper (and indirect effects 95% provided by the original authors) that will be used for the Aim 1 replication. 
-    o	Of note, the ACC FA values are only included as reference and are not being used, given the sig. changes in DWI preprocessing between release 1 and release 2.
-  •	*Code*: This folder includes the R Markdown code (and .html output) of template code that will be used for the final analyses. Each of the for steps have self-contained explanations of steps within the file and the associated methods/packages linked 
-      (1) Part1_AggregateData is used to compile the data that into a single .csv file used; 
-      (2) Part2_CreateVars_Descriptives performs exclusion criteria, variable creation/selection (consistent w/ original work) and puts it into a dataset; 
-      (3) fits the factors for our models and saves the individual scores for each subject; 
-      (4) uses fake data to demonstrate the code for the replication (Aim 1) and multiverse extension (Aim 2) that will be used with the full data.
+
+  + *Manuscript*: this folder includes the initial version of the manuscript that covers the Abstract, Introduction, Methods, and proposed Analyses. It also includes the effects from the original paper (and indirect effects 95% provided by the original authors) that will be used for the Aim 1 replication. 
+  ++ Of note, the ACC FA values are only included as reference and are not being used, given the sig. changes in DWI preprocessing between release 1 and release 2.
+  +	*Code*: This folder includes the R Markdown code (and .html output) of template code that will be used for the final analyses. Each of the for steps have self-contained explanations of steps within the file and the associated methods/packages linked 
+  ++ (1) Part1_AggregateData is used to compile the data that into a single .csv file used; 
+  ++ (2) Part2_CreateVars_Descriptives performs exclusion criteria, variable creation/selection (consistent w/ original work) and puts it into a dataset; 
+  ++ (3) fits the factors for our models and saves the individual scores for each subject;
+  ++ (4) uses fake data to demonstrate the code for the replication (Aim 1) and multiverse extension (Aim 2) that will be used with the full data.
 
 
 ## Stage 2 Analyses/Results
