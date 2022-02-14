@@ -1,0 +1,653 @@
+---
+title: "NeuroImage:Reports Open Data Replications"
+author: "<h3>by Michael Demidenko</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: yes
+    number_sections: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    code_folding: hide
+    self_contained: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+tags: []
+subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
+---
+# Rmd Description
+
+This is Part 4 for the project focused on the extension and multiverse analysis of a publication in Development and Psychopathology [2020](www.doi.org/10.1017/S0954579419000580)
+
+> This document contains code with **fake data** (see tab 2.3) for *prospective* Aim 1 and Aim 2 analyses 
+
+The sections are split across Aim 1 and Aim 2. In Aim 1 we conduct the replication analyses from the original study, which focused on the mediating role of puberty (parent report) on the direct association between the Family Environment factor (independent variable) and the brain outcomes (5 brain outcomes: Amygdala volume, ACC thickness, ACC area, and Left & Right Amyg-Cing Network resting state connectivity. Note, we do not use the sixth brain outcome, ACC FA, due to the significant change in preprocessing of DWI data between release 1 and 2). In Aim 2 we extend these results by conducting the multiverse analyses for model permutations across IV variables and the mediator, with all brain outcomes unchanged.
+
+*Note: the option for this rmarkdown is `code_folding: hide`, so the code is hidden. Please select `Code` --> `Show All Code` to unhide all code blocks. Otherwise, in each section you can simply click the `Code` button to show the respective code chunk.*
+
+
+* Useful R/Mplus links:
+    + Lavaan [cran page](https://cran.r-project.org/web/packages/lavaan/lavaan.pdf)
+    + Lavaan [syntax guide](http://www.structuralequations.com/resources/Basic_lavaan_Syntax_Guide_Aug1_2013.pdf)
+    + Lavaan [mediation](https://lavaan.ugent.be/tutorial/mediation.html)
+    + Simulate [fake data](https://aosmith.rbind.io/2018/08/29/getting-started-simulating-data/) in R
+    + [Functions v Loops](https://erdavenport.github.io/R-ecology-lesson/03-loops-and-functions.html) in R
+
+***
+***
+
+# Packages {.tabset}
+
+
+## Required packings, install
+```{r message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(janitor, cowplot, dplyr, readr, devtools, table1, MatchIt, kableExtra, corrplot, multiplex, MplusAutomation,lavaanPlot, semPlot, lavaan, parameters, specr, MASS)
+```
+
+## Load packages
+
+At each instance, load packages.
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse) # piping, descriptives, etc
+library(kableExtra) # for table formatting
+library(lavaan) # running lavaan Factor models +  mediation 
+library(lavaanPlot)
+library(parameters) # reporting lavaan parameters in table
+library(specr)
+library(cowplot)
+library(MASS)
+library(glue)
+```
+
+
+
+## Creating fake data
+
+Here we create some fake data to pilot mediation models
+
+```{r message=FALSE, warning=FALSE}
+# test data
+set.seed(1989)
+size = 123
+m = -18
+m2 = 3
+m3 = 13.1
+m4 = -18
+m5 = -2
+m6 = 7.1
+sd = 1
+sd2 = 2.5
+sd3 = 6.3
+sd4 = 4.4
+
+q <- seq(1, 1, 0.001)
+data_d <- data.frame(
+  Fam_Env = rnorm(n = size, mean = m, sd = sd),
+  Child = rnorm(n = size, mean = m2, sd = sd2),
+  Parent = rnorm(n = size, mean = m3, sd = sd3),
+  Amygdala_Vol = rnorm(n = size, mean = m3, sd = sd4),
+  ACC_Thick = rnorm(n = size, mean = m5, sd = sd),
+  ACC_Area = rnorm(n = size, mean = m6, sd = sd2),
+  L_Amy_CON = rnorm(n = size, mean = m6, sd = sd3),
+  R_Amy_CON = rnorm(n = size, mean = m5, sd = sd2),
+  Pubert_PR = rnorm(n = size, mean = m2, sd = sd),
+  Pubert_YR = rnorm(n = size, mean = m4, sd = sd),
+  Age = rnorm(n = size, mean = m, sd = sd3)
+)
+```
+
+# Multiverse Function {.tabset}
+
+Here we define our multiverse function, where model inputs include:
+
+* List of IVs (X)
+* List of DVs (Y)
+* List of Mediators (M)
+* List of covariates (Cov)
+* Specified lavaan model
+* Aim 1: this can be used for our Five* model replication, as we run `five` models
+  - Fam | PR Puberty | Amygdala Vol
+  - Fam | PR Puberty | ACC Thick
+  - Fam | PR Puberty | ACC Area
+  - Fam | PR Puberty | L Amyg ~ CON FC
+  - Fam | PR Puberty | R Amyg ~ CON FC
+  
+ *`Note:` Fam | PR Puberty | ACC FA we do not include the FA measure given the changes in preprocessing for DWI data between the releases which impacted the underlying estimates of FA.
+
+* Aim 2: this is particularly useful for our 100+ multiverse estimate
+
+## Function code
+
+Some helpful notes regarding this function. There are three steps. The function requires input of: `X` = list of independent variables, `Y` = list of dependent variables, `M` = list of mediators, `Cov` = list of covariates (note, for this project we do not have a list, but in stead use constants of Age, Race, Sex), `df` A datamrame that contains our variables (columes) and participants (rows), `lavaan_model` = this is the syntax specifying the mediation model, `model_boot` = the number of bootstraps to run in the mediation model that calculates significance for our effects.
+
+1. Step 1 simply takes in the X, Y, M, Cov list and creates the permutation of variable combinations. This is simply the product of the list of items in X, Y, M, Cov. It calculates this product and spits out the combinations used. 
+
+2. In step 2 we use apply run run all variable permuates (matrix rows) for our lavaan::sem() model. The apply function takes each row of variables (stored in `var_perumtations`), sends them into the function variable `combos`, subsets our `df` by these variables and creates these column names, then runs lavaan function on this data. Here, we specify the mediation model, too, but do not include all covariates yet. We will expand to include Race + Sex + Age and update Sex/race as "ordered" in the lavaan::sem() syntax
+
+3. After Step 2 is complete, we will have a list of `total permutations` saved to the `data_rep`. We can acess the model, variable and fit statistics via different ways. Here, we use lappy() to loop through this list, and send each instance to function(x) where x is each iteration of output in `data_rep`. We use the `parameters` package to save the standardized model parameters to a data.frame, and we save the variable names saved for each model, too. Using the location of each variable and parameter name and estimate value, we extract this estimate and save it to a data.frame. We combine across rows to get allow of these values in a signal dataframe, then relabel the column names so have output structure that is somewhat similar to the specr() output style to use the plot_spercs() function(s).
+
+
+```{r}
+mediation_specr <- function(X, Y, M, Cov, df, lavaan_model, model_boot) {
+  
+## Step 1
+  # Creating variable permutations for lists in X, Y, M, Cov
+var_permutations <- as.matrix(expand.grid(X = X, 
+                                          Y = Y, 
+                                          M = M, 
+                                          Age = Cov))
+
+# Check the number of permutations that are created basic ont he input strings
+total_permutes <- length(X)*length(Y)*length(M)*length(Cov)
+print(paste0("Total Permutations for Current Multiverse: ", total_permutes))
+
+
+# Step 2
+# Create data.frame of output using model pre
+##  the var_permutations are run across the matrics into the function.
+
+
+data_rep <- 
+  apply(X = var_permutations, MARGIN = 1, function (combos) {
+    require(lavaan)
+    permuted.df <- df[combos] # pull data that only has variables we're interested in
+    
+    # selection variable names to replace in model_fit()
+    X = as.character(combos[1]) 
+    Y = as.character(combos[2])
+    M = as.character(combos[3])
+    Age = as.character(combos[4])
+    
+    # we use "glue()" here in the model sytnax to example {variables} with the values assigned above. 
+    mediation_model <- glue('
+    # Direct Effect (X->Y), c - path
+    {Y} ~ c*{X} + {Age}
+    
+    # Meidation (X -> M), a path
+    {M} ~ a*{X} + Age
+    
+    # Mediation (M -> Y), b path 
+    {Y} ~ b*{M} 
+    
+    # Indirect Effect (a*b)
+    ind := a*b
+    
+    # Total Effect
+    total := c + (a*b)
+    ')
+    
+    # Herre we run and save the model parameters to "fit"
+    fit <-lavaan::sem(model = mediation_model, 
+                      data = permuted.df,
+                      se = "bootstrap",
+                      bootstrap = model_boot, 
+                      mimic = "Mplus"
+                      )
+
+# Step 2
+# Extra the variables we will be using in subsequent steps
+require(parameters)
+
+model_out = data.frame(model_parameters(fit, standardize = FALSE))
+med_vars = lavNames(fit)
+spec_data <- data.frame("X"  = as.character(med_vars[3]), 
+                       "Y" = as.character(med_vars[1]), 
+                       "M" = as.character(med_vars[2]), 
+              "Direct_estimate" = model_out[1,4], "Direct_std.error" = model_out[1,5],
+              "Direct_conf.low" = model_out[1,6],  "Direct_conf.high" = model_out[1,7], 
+              "Direct_p.value" = model_out[1,9],
+           
+              "Apath_estimate" = model_out[3,4], "Apath_std.error" = model_out[3,5],
+              "Apath_conf.low" = model_out[3,6],  "Apath_conf.high" = model_out[3,7], 
+              "Apath_p.value" = model_out[3,9],
+              "Bpath_estimate" = model_out[5,4], "Bpath_std.error" = model_out[5,5],
+              "Bpath_conf.low" = model_out[5,6],  "Bpath_conf.high" = model_out[5,7],
+              "Bpath_p.value" = model_out[5,9],
+           
+              "Indirect_estimate" = model_out[7,4], "Indirect_std.error" = model_out[7,5],
+              "Indirect_conf.low" = model_out[7,6],  "Indirect_conf.high" = model_out[7,7], 
+              "Indirect_p.value" = model_out[7,9],
+              
+              "Total_estimate" = model_out[8,4], "Total_std.error" = model_out[8,5],
+              "Total_conf.low" = model_out[8,6],  "Total_conf.high" = model_out[8,7], 
+              "Total_p.value" = model_out[8,9]) 
+  # add model observations & parameters N
+  spec_data$Observations = fitMeasures(fit)[21]; spec_data$N_Parameters = fitMeasures(fit)[1]
+  
+  return(spec_data)
+}) %>% 
+  bind_rows() %>%  # combined by rows the lists from lapply
+  gather(key = "Effect", value = "Coefficient", Direct_estimate:Total_p.value) %>% # we take all colum names Direct:Total_p and save the variable names, i.e., Direct, to the key "Effect" and the value to "Coefficient"
+  separate(col = "Effect", into = c("Effect","Type"), sep = "_", extra = "merge", fill = "right") %>% # because we want to combine this data to similar format as we safe our thijseen file, we want to separate all variables with '_', that way the first value 'Direct' or 'Apath' is in "Effect" and the type of value, i.e., SE or lower CI, is in 'Type' column. We fill these to the right
+  spread(key = "Type", value = "Coefficient") # now that we have the type column, we spread this data out from long to wide
+  
+
+
+
+}
+
+```
+
+
+
+# Aim 1 {.tabset}
+
+## Thijssen et al effects
+
+We extract the Betas and Standard errors from the original [paper](www.doi.org/10.1017/S0954579419000580) (i..e, Figure 1, Table 4 - 6), and calcualte the 95% CI for the Direct Effect, A path, B path using `Beta +/- 1.96 * SE`. We save these in a `.csv` file to use in comparisons here.
+
+```{r}
+Thij_eff <- read.csv("Thijssenetal_Effects.csv") %>% 
+  rename("estimate" = Beta, "std.error" = SE, "conf.low" = lower_95CI, "conf.high" = upper_95CI, "p.value" = pval) 
+
+
+# Remove the ACC_FA, as we are not using this in replication
+Thij_eff <- Thij_eff %>% 
+  filter(Brain != "ACC_FA")
+```
+
+Here we plot the Beta estimates and any associated 95% Confidence Interval for each path type: a path, b path, indirect (a*b), direct (c`) and total (c) across the five brain DVs.
+
+```{r}
+
+color_1 <- cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")# six colours for six factors
+
+Thij_eff %>% 
+  filter(!Effect == "Total") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  labs(y = "Beta Estimates") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+```
+
+## Replication Mediation
+
+We use the same mediation model syntax as specified above.
+
+Create combinations and run models combinations for IV, Mediation or Brain DVs to run 5 mediation
+```{r}
+# list variables for mediation
+Rep_iv = c("Fam_Env")
+Rep_dv = c("Amygdala_Vol","ACC_Thick","ACC_Area","L_Amy_CON","R_Amy_CON")
+Rep_m = c("Pubert_PR")
+Rep_cov = c("Age")
+
+set.seed(1989)
+mediation_replicate <- mediation_specr(X = Rep_iv, Y = Rep_dv, M = Rep_m, Cov = Rep_cov, 
+               df = data_d, lavaan_model = mediation_model, model_boot = 200)
+
+
+```
+
+
+Here we write the `extract_mediate` function.  First, we pull the associated X, Y, M variable names to replace the model values with our variable names for the plots. Using the data pulled by `model_parameters`, we pull the associated [row,column] from the model_parameters() output for the model. Here we focus on the Direct, Indirect, Total, Apath, and Bpath, extracting the beta, standard error, association upper/lower bound 95% CI, and p-value  
+
+
+
+
+### Parameters Output
+
+In the function we defined, `mediation_specr', we model these parameters using [lapply](https://www.guru99.com/r-apply-sapply-tapply.html). This simply  a function that can work across lists that we created -- think of it as cleaner version of a [for loop](https://www.datamentor.io/r-programming/for-loop/). We combined the extracted values across rows (bind_rows), then, we use a combination of [gather, separate and spread](https://uc-r.github.io/tidyr) to get ou data frame in the manner we want.
+```{r}
+
+mediation_replicate %>% 
+  kbl(digits = 4, booktabs = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+```
+
+
+## Compare: Orig. v Replication
+
+First, pull Brain variable and indirect/direct/total/apath/bpath betas and associated pvalues from our replication model 
+```{r}
+replication_to_compare <- mediation_replicate %>% 
+  dplyr::select(Y, Effect, estimate, p.value) %>% 
+  rename("Brain" = Y) 
+```
+
+For the conceptual replication, we proposed to check several things:
+
+1. Whether the estimates in the replication study are in the same direction as the original
+2. Whether the estimates in the replication study are significant as in the original
+3. Whether the estimates in the replication study overlap with the 95% CI from the original study for that estimate.
+
+
+First, we provide a visual representation of item 1 and 2 noted above. We overlay the original study beta estimates + 95% CI and the replication model estimates for each path across each brain DV we ran out mediation model for. The original beta estimate is a colored circle (differentiated by path) and the replicated estimate is a colored 'X' associated with a similar color for each mediation path and brain DV. 
+
+```{r}
+color_1 <- cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")# six colours for six factors
+
+Thij_eff %>% 
+  #filter(!Effect == "Total") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  geom_point(data = replication_to_compare, aes(x = Brain, y = estimate, colour = Brain), shape = 4) +
+  labs(y = "Beta Estimates", 
+       colour = "Mediation Path",
+       caption = "Circle = Effect From Thijssen et al; X: Effect From Replication") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+```
+
+Here, we generate some estimates to determine p-value (i.e.,  p < .001, < .01, < .05) threshold for each estimate using [case_when](https://www.sharpsightlabs.com/blog/case-when-r/). Then, we ask a True (1)/False(0) statement using [if_else](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/ifelse) within [mutate](https://dplyr.tidyverse.org/reference/mutate.html) to determine whether 1) the sign of the effect (+/-) is in the same direction using the [sign](https://statisticsglobe.com/sign-function-in-r/) function, 2) the effect from replicated data found between 95% CI in original study and 2) that the original p-value category (i.e., p  > 05 or p < .05) is similar across the two. Before we do this, we combine the original data output (dataframe(Thij_eff) and the replicated data (data.frame(replication_to_compare)) by the "brain" and the "effect" overlap. We provide the suffix "_OG" for the original coefficients and "_Rep" for the replication. 
+
+```{r}
+
+combined_OG_Rep <-left_join(Thij_eff, replication_to_compare, 
+          by = c("Brain","Effect"),
+          suffix = c("_OG","_Rep"))
+
+combined_OG_Rep <- combined_OG_Rep %>% 
+  mutate(pval_Rep = case_when(p.value_Rep < .001 ~ "< .001",
+                               p.value_Rep < .01 ~ "< .01",
+                               p.value_Rep < .05 ~ "< .05",
+                               TRUE ~ "> .05")) %>% 
+  mutate(betwn95 = if_else(estimate_Rep < conf.high & conf.low < estimate_Rep,1,0), 
+         same_p_cat = if_else(p.value_OG == pval_Rep,1,0),
+         same_sign = if_else(sign(estimate_Rep) == sign(estimate_OG), 1, 0)
+  )
+
+```
+
+Now that we have generated our variables, we can quantify the % of which overlap by using the mean() within the summarize() wrap. Given that our values are 1/0, using the mean works, given that we add/divide.
+```{r}
+combined_OG_Rep %>% 
+  summarize('Rep Beta between 95% CI Orig' = mean(betwn95, na.rm = T),
+            'Rep p-value same cat as Orig' = mean(same_p_cat, na.rm = T),
+            'Rep Beta sign same Dir as Orig' = mean(same_sign, na.rm = T))
+```
+
+
+
+I have considered how we may conduct a permutation test to generate a distribution for our replicated effects to which we can compare the 'populate estimate' of the original, and see whether they significantly differ. But that may be too much given Aim 1 is not the crux of the project and it's a conceptual replication?
+
+consider... https://www.frontiersin.org/articles/10.3389/fpsyg.2017.01455/full
+```{r eval=FALSE, include=FALSE}
+library(foreach)
+
+iv = c("Fam_Env","Child")
+dv = c("Amygdala_Vol","ACC_Thick")
+m = c("Pubert_YR","Pubert_PR")
+cov1 = "Age"
+# Step 1
+  # Creating variable permutations for lists in X, Y, M, Cov
+var_permutations <- as.matrix(expand.grid(X = iv, 
+                                          Y = dv, 
+                                          M = m, 
+                                          Age = cov1))
+
+cl <- parallel::makeCluster(4)
+doParallel::registerDoParallel(cl)
+
+permutes_boot <- apply(X = var_permutations, 1, function (combos) {
+require(glue)
+lapply(1:20, function(i) { # here, like lapply(1:200, function(x), we do parallized vs
+    permuted.df <- data_d[combos] # updated data_d with the data.frame where the variables exist
+    #colnames(permuted.df) <- names(combos)
+    permuted.df <- sample_n(tbl = permuted.df, size = 123, 
+                                    replace = TRUE); 
+    
+    X = as.character(combos[1])
+    Y = as.character(combos[2])
+    M = as.character(combos[3])
+    Age = as.character(combos[4])
+    
+    mediation_model <- glue('
+    # Direct Effect (X->Y), c - path
+    {Y} ~ c*{X} + {Age}
+    
+    # Meidation (X -> M), a path
+    {M} ~ a*{X} + Age
+    
+    # Mediation (M -> Y), b path 
+    {Y} ~ b*{M} 
+    
+    # Indirect Effect (a*b)
+    ind := a*b
+    
+    # Total Effect
+    total := c + (a*b)
+    ')
+      fit = lavaan::sem(model = mediation_model, 
+                        data = permuted.df,
+                        se = "bootstrap",, 
+                        mimic = "Mplus")
+      return(fit)
+    })
+  
+})
+
+```
+
+
+# Aim 2 {.tabset}
+
+## Creating list of variables
+
+Here we create a list of variables that we will be using. For example, we are running models across different combinations of IV, DV, and Mediators. We add these to a list.
+In our function, we use `exapnd.grid` to create all permutations for our "X", "Y" and "M" columns that'll be used in the mediation model. We save this as as a matrix.
+
+
+```{r}
+# list variables for mediation
+iv = c("Fam_Env","Child","Parent")
+dv = c("Amygdala_Vol","ACC_Thick","ACC_Area","L_Amy_CON","R_Amy_CON")
+m = c("Pubert_YR","Pubert_PR")
+cov1 = "Age"
+
+```
+
+
+***
+***
+
+## Mediation model
+
+In the real models we will fit a mediation model degenerated from Steps 1 - 3. This, of course, would be expanded by including the brain variables. The goal would be to create a loop/function that will run the mediation with each version of:
+
+**Family**
+
+* Overall factor (Family Environment).
+* Sub factor A (Child)
+* Sub factor B (Parent)
+* Sub factor C (Demographic)
+* Scale level (e.g., monitoring, acceptance, etc)
+
+**Puberty**
+
+* Child SR
+* Parent SR
+
+**Brain**
+
+* Using similar brain outcomes as original paper, using 5 of the 6 brain outcomes, given DWI sig. preprocessing changes between release 1 & 2
+
+
+While for the real analyses we will use the variables from the original data, here we will focus on our simulated variables. So the mediation model will be comprised using these fake variables.
+
+
+## Run mediation models
+
+Here we take the permutations of our X, Y, M variables, combined it with apply() to run a quick function that will run our mediation models using lavaan. For specifics related to this function, revisit `Multiverse Function` above
+
+
+
+```{r}
+set.seed(1989)
+mediation_multiverse <- mediation_specr(X = iv, Y = dv, M = m, Cov = cov1, 
+               d = data_d, lavaan_model = mediation_model, model_boot = 100)
+
+
+```
+
+## Estimates
+
+here we extract and review the variables in the model + standardized parameters, standard error, 95% CI (lb/ub) and p-value. 
+
+Below we can visualize this complete set out coefficients for our models. This output is associated with the **length N = `r length(iv)*length(dv)*length(m)`**  models that we were intending to get. This is product for X, M, Y. As we see, the table length for a single path type, such as *Direct effect*, is **`r mediation_multiverse %>% filter(Effect == "Direct") %>% nrow()`**.
+
+
+```{r message=FALSE, warning=FALSE}
+mediation_multiverse %>% 
+  kbl(digits = 4, booktabs = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+```
+
+## Specr Plots
+
+For these plots, as is used prior studies we report the ordered effects across out multiverse of indirect, direct and total effects. There are some additional inferential procedures we can consider, see [Dani Cosme's Documentation example ](https://dcosme.github.io/specification-curves/SCA_tutorial_inferential). However, these bootstrapped estimates are typically done for simple X~Y models and would require tailoring for the mediation.
+
+Of note, while there are no significant effects here (conf.high/conf/low overlap with 0), these plots will color points blue/red for p < .05 for post/neg effects.
+
+
+### Direct Effect
+
+```{r}
+specr_direct <- mediation_multiverse %>% 
+  filter(Effect == "Direct")
+specr_direct$controls <- "Age + Race + Sex"
+
+
+plot_a <- plot_curve(df = specr_direct, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Positive (p < .05)")
+
+plot_b <- plot_choices(df = specr_direct, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Direct Effect")
+
+cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'l',
+                       labels = c('A', 'B'), rel_heights = c(.36, .54),
+                   label_fontfamily = "Times", label_size = 12)
+```
+
+
+### Indirect Effect
+
+```{r}
+specr_indirect <- mediation_multiverse %>% 
+  filter(Effect == "Indirect")
+specr_indirect$controls <- "Age + Race + Sex"
+
+plot_a_ind <- plot_curve(df = specr_direct, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Positive (p < .05)")
+
+plot_b_ind <- plot_choices(df = specr_direct, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Indirect Effect")
+
+cowplot::plot_grid(plot_a_ind, plot_b_ind, ncol = 1, align = "v", axis = 'l',
+                       labels = c('A', 'B'), rel_heights = c(.36, .54),
+                   label_fontfamily = "Times", label_size = 12)
+
+```
+
+
+### Total Effect
+
+```{r}
+specr_total <- mediation_multiverse %>% 
+  filter(Effect == "Total")
+
+specr_total$controls <- "Age + Race + Sex"
+
+plot_a_tot <- plot_curve(df = specr_total, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Positive (p < .05)")
+
+plot_b_tot <- plot_choices(df = specr_total, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Total Effect")
+
+cowplot::plot_grid(plot_a_tot, plot_b_tot, ncol = 1, align = "v", axis = 'l',
+                       labels = c('A', 'B'), rel_heights = c(.36, .54),
+                   label_fontfamily = "Times", label_size = 12)
+
+```
+
+## Subjective Eval Replication
+
+Here we randomly select 5 co-authors out of a list of 10 to subjectively evaluate the replication of the effects.
+
+First, we randomly generate a seed between 1 and 1000, and then randomly sample 5 names from a list of 10, without replacement. We randomize the seed so the resulting values are truly random. Otherwise, by having a list of 10 values we would know prospectively which 10 would be selected based for a set.seed of say, 100.
+```{r message=FALSE, warning=FALSE}
+author_list = c("Author1", "Author2", "Author3","Author4","Author5",
+                "Author6", "Author7", "Author8")
+
+seed_n = round(runif(1, min = 1, max = 1000),0) # round to whole number
+set.seed(seed_n)
+
+Reviewers = sample(x = author_list, size = 5, replace = FALSE)
+
+print(paste0(Reviewers))
+
+
+write.table(Reviewers, file = "./Authors_ReviewingReplication.txt", col.names = FALSE, row.names = FALSE, sep = "\t")
+```
+
+
+
+
+# misc code
+
+We can visualize an individual model if needed...
+
+https://rich-iannone.github.io/DiagrammeR/graphviz_and_mermaid.html
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+lavaanPlot(model = data[[1]]$fit,
+           graph_options = list(overlap = "false", font_size = "10", 
+                                nodesep = 1, ranksep = .0, rankdir = "LR"),
+           node_options = list(shape = "box", arrow = "inv"),
+           coefs = TRUE,
+           stand = TRUE,
+           covs = FALSE,
+           stars = "regress",
+           digits = 4)
+
+
+
+```
+
+Specr()
+Specr with[lavaan](https://masurp.github.io/specr/articles/measurement_models.html)
+
+Dani Comb's [SCA](https://dcosme.github.io/specification-curves/SCA_tutorial_inferential)
+
+Spec curve analysis [published](https://journals.sagepub.com/doi/10.1177/0956797619830329) and [OSF code](https://osf.io/rkb96/) and [2019](https://www.nature.com/articles/s41562-018-0506-1)
+
+Recent mediation with [2019 spec](www.doi.org/10.1007/s11121-021-01280-1)
+
+
+* Simonsohn, Simmons, & Nelson [2015](https://sticerd.lse.ac.uk/seminarpapers/psyc16022016.pdf) and [2020](https://www.nature.com/articles/s41562-020-0912-z)
+[Steegen et al., 2016](https://journals.sagepub.com/doi/10.1177/1745691616658637)
+
+
+
+
+
+
+
+
+
+
+

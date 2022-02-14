@@ -1,0 +1,753 @@
+---
+title: "NeuroImage:Reports - Recoding & Descriptives"
+author: "<h3>by Michael Demidenko</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: yes
+    number_sections: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    code_folding: hide
+    self_contained: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+tags: []
+subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
+---
+# Rmd Description
+
+This is Part 2 for the project focused on the extension and multiverse analysis of a publication in Development and Psychopathology [2020](www.doi.org/10.1017/S0954579419000580)
+
+> This document contains code for recoding variables and their descriptives 
+
+*Note: the option for this rmarkdown is `code_folding: hide`, so the code is hidden. Please select `Code` --> `Show All Code` to unhide all code blocks. Otherwise, in each section you can simply click the `Code` button to show the respective code chunk.*
+
+Same as in Part1, here are some references that may be useful:
+
+* Base R [cheatsheets](https://www.povertyactionlab.org/sites/default/files/r-cheat-sheet.pdf) 
+* Using [Tabsets](https://bookdown.org/yihui/rmarkdown-cookbook/html-tabs.html)
+* Interactive tutorial by Andy Field to learn R, [Discovr](https://www.discovr.rocks/discovr/)
+* Statistical Analyses in R from [Russel Poldrack](https://statsthinking21.github.io/statsthinking21-R-site/)
+* Instructional videos from [Karandeep Singh](https://www.youtube.com/channel/UC7eRNr1Pprls2aU5WWPz15Q/videos)
+
+***
+***
+
+# Required Packages {.tabset}
+
+In this rmarkdown, we use a more extensive list of packages to complete all necessary steps. Here, we install any package that is not install and then load these packges into the session.
+
+## Install packages 
+
+Install all packaged used in below code, if not already installed. Of note, if these packages are already instill, there is no harm in rerunning this block of code. The `if` rule determines if an installing is required. If the packages are already installed, nothign happens
+
+```{r message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(janitor, cowplot, dplyr, readr, devtools, table1, MatchIt, kableExtra, corrplot, multiplex, MplusAutomation,lavaanPlot, semPlot, lavaan, parameters, GGally, ggplot2, umx)
+```
+
+## Load packages
+
+At each instance, we need to load the packages.
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse) # piping, descriptives, etc
+library(table1) # for descriptive
+library(MatchIt)
+library(kableExtra) # for table formatting
+library(GGally) # used for ggpairs()
+library(ggplot2) # as needed plotting
+library(corrplot) # diff corr plot figures
+library(lavaan) # running lavaan Factor models +  mediation 
+library(lavaanPlot)
+library(semPlot) # plotting lavaan model as figured
+library(parameters) # reporting lavaan parameters in table
+library(janitor)
+library(umx) # regress out values
+```
+
+## Session
+
+We an check the session information to observe all packages are loaded. What we are interest here is 
+```{r}
+session <- sessionInfo()
+platform <- session[[1]][1]
+os_vrs <- session[[4]]
+r_vrs <- session[[1]][13]
+```
+
+After obtain this information, we can track the software that is used to run the below code chunks. The iteration run on *`r format(Sys.time(), '%B %Y')`* was ran on the system platform *`r platform`*, operation system *`r os_vrs`* and  *`r r_vrs`*
+
+***
+***
+
+# Load data/recording Variables {.tabset}
+
+## Loading .csv data
+
+
+We are focusing on variables and analyses conducted described in Part 1 of the R markdown files. Here we load the cooked up .csv data that include the variables the original study used. If you do not have this cooked up file, repeat step 1.
+
+
+```{r message=FALSE, warning=FALSE}
+# load data that wsa written above
+abcd = read_csv("ABCD_cooked_2021_11_15.csv")
+
+```
+
+
+## Recoding Nominal/Ordinal Scales
+
+The current dataset includes only numerical values. For descriptive purposes, it is helpful to recode these numerical values into their natiev nominal and ordinal variables. The [NDA Data Diction](https://nda.nih.gov/data_dictionary.html?submission=ALL&source=ABCD%2BRelease%2B3.0) contains the necessary information to achieve this. The list of items that we recode here are:
+
+* Race/Ethnicity
+  + White (1); Black (2), Hispanic (3), Asian (4) and other (5)
+* Household income
+  + Less than $5k (1) to 200k + (10)
+  + refused to respond (777) and missing (999)
+* Education
+  + Never attended/kindergarten only (0) to Doctoral Degree (21)
+  + refuse to answer (777)
+* Puberty for Males and Females into a single variable
+ + prepuberty (1) to post puberty (5)
+
+```{r message=FALSE, warning=FALSE}
+# recoding variables 
+# race
+abcd$race = factor(abcd$race_ethnicity, 
+                            levels = c(1,2,3,4,5),
+                            labels = c("White", "Black", "Hispanic", "Asian", "Other"))
+
+# income
+abcd$income_base = factor(abcd$demo_comb_income_v2, 
+                            levels = c(1,2,3,4,5,6,7,8,9,10,777,999),
+                            labels = c('Less than $5,000',
+                                       '$5,000 through $11,999',
+                                       '$12,000 through $15,999',
+                                       '$16,000 through $24,999',
+                                       '$25,000 through $34,999',
+                                       '$35,000 through $49,999',
+                                       '$50,000 through $74,999',
+                                       '$75,000 through $99,999',
+                                       '$100,000 through $199,999',
+                                       '$200,000 and greater', 
+                                       'Refuse to answer',
+                                       "Don't Know"))
+
+# education
+abcd$education = factor(abcd$demo_prnt_ed_v2,
+                        levels = c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,
+                                   14,15,16,17,18,19,20,21,777),
+                               labels = c("Never attended/Kindergarten only",
+                                          "1st grade","2nd grade", "3rd grade", 
+                                          "4th grade", "5th grade", "6th grade",
+                                          "7th grade", "8th grade", "9th grade", 
+                                          "10th grade", "11th grade", "12th grade",
+                                         " High school graduate", "GED or equivalent", 
+                                         "Some college","Associate: Occup",
+                                         "Associates: Academic", "Bachelor's degree", 
+                                         "Master's degree", "Professional School (MD)", 
+                                         "Doctoral degree","Refuse to Answer"))
+
+
+
+# self-report measure of PUBERTAL STATUS  [1] prepuberty ; [2] - early puberty ; [3]-mid puberty; [4] - late puberty; [5] - post puberty
+abcd = abcd %>% 
+  mutate(p_puberty = case_when(sex == 'F' ~ pds_p_ss_female_category_2,
+                             sex == 'M' ~ pds_p_ss_male_category_2),
+         y_puberty = case_when(sex == 'F' ~ pds_y_ss_female_category_2,
+                             sex == 'M' ~ pds_y_ss_male_cat_2)
+         )
+
+# self-report measure of parental separation demo_prnt_marital_v2
+abcd$marital_stat <- factor(abcd$demo_prnt_marital_v2,
+                        levels = c(1,2,3,
+                                   4,5,
+                                   6,777),
+                               labels = c("Married", "Widowed","Divorced",
+                                          "Separated", "Never Married",
+                                          "Living with Partner", "Refused to Answer"))
+```
+
+In addition to the above variables, we want to create a flag that distinguishes the first and second release for the baseline data, so we can note what proportion of the sample here is from the first and second release. The original dataset used the release 1.1 sample. We specify the date cut-off for a "before" and "after" release 1.1 using the information provided by Frank Haist:
+
+*There is no flag in the NDA 3.0 to indicate which participants were in the 1.1 release. However, the cutoff for release 1 versus release 2 used in the 1.0/1.1 release was August 30, 2017. Thus, it is easy to identify those PGUIDs (subjectkey) or participants from 8/30/2017 and earlier to produce the relevant flag. Those after 8/30/2017 were included in the full release of baseline data in NDA 2.0 and beyond.*
+
+```{r message=FALSE, warning=FALSE}
+# create variable for before/after release 1.0 
+abcd <- abcd %>% 
+  mutate(Date = as.Date(interview_date, format= "%m/%d/%Y")) %>% 
+  mutate(Date_after = 
+           ifelse(Date <= as.Date("2017-08-30"),0,1)) # 0 = before Aug 08, 2017
+
+abcd$DateAfter_Release1 = factor(abcd$Date_after, 
+                            levels = c(0,1),
+                            labels = c("Release 1","Release 2"))
+
+```
+
+## Cleaning variables
+
+Above we recoded numerical values for purposes of descriptives. However, in later analyses some variables will contain values that participants `refused to answer` (777), that were `missing` (999), or `not applicable` (-1). We relabel these values as `NA` which the R software recognized as [missing](https://www.statmethods.net/input/missingdata.html). 
+
+```{r message=FALSE, warning=FALSE}
+# replace '777' with missing
+abcd$demo_prnt_marital_v2[abcd$demo_prnt_marital_v2==777] <- NA
+
+# replace '999' and '777' with missing
+abcd$demo_comb_income_v2[abcd$demo_comb_income_v2==777 | abcd$demo_comb_income_v2==999] <- NA
+
+# ksads '-1' not applicable
+abcd$kbi_p_conflict[abcd$kbi_p_conflict==-1] <- NA
+
+# edu refused '777'
+abcd$demo_prnt_ed_v2[abcd$demo_prnt_ed_v2==777] <- NA
+
+# pregnancy 1/0, remove "999" & "777"
+abcd$demo_prnt_prtnr_bio[abcd$demo_prnt_prtnr_bio==777 | abcd$demo_prnt_prtnr_bio==999] <- NA
+
+# child puberty
+abcd$y_pds_ht[abcd$y_pds_ht==777 | abcd$y_pds_ht==999] <- NA
+abcd$y_pds_skin[abcd$y_pds_skin==777 | abcd$y_pds_skin==999] <- NA
+abcd$y_pds_bdhair[abcd$y_pds_bdhair==777 | abcd$y_pds_bdhair==999] <- NA
+abcd$y_pds_brstgrw[abcd$y_pds_brstgrw==777 | abcd$y_pds_brstgrw==999] <- NA
+abcd$y_pds_menstrual[abcd$y_pds_menstrual==777 | abcd$y_pds_menstrual==999] <- NA
+abcd$y_pds_dpvoic[abcd$y_pds_dpvoic==777 | abcd$y_pds_dpvoic==999] <- NA
+abcd$y_pds_fcHair[abcd$y_pds_fcHair==777 | abcd$y_pds_fcHair==999] <- NA
+
+# parent report puberty
+abcd$p_pds_ht[abcd$p_pds_ht==777 | abcd$p_pds_ht==999] <- NA
+abcd$p_pds_skin[abcd$p_pds_skin==777 | abcd$p_pds_skin==999] <- NA
+abcd$p_pds_bdhair[abcd$p_pds_bdhair==777 | abcd$p_pds_bdhair==999] <- NA
+abcd$p_pds_brstgrw[abcd$p_pds_brstgrw==777 | abcd$p_pds_brstgrw==999] <- NA
+abcd$p_pds_menstrual[abcd$p_pds_menstrual==777 | abcd$p_pds_menstrual==999] <- NA
+abcd$p_pds_dpvoic[abcd$p_pds_dpvoic==777 | abcd$p_pds_dpvoic==999] <- NA
+abcd$p_pds_fcHair[abcd$p_pds_fcHair==777 | abcd$p_pds_fcHair==999] <- NA
+
+## Was your pregnancy with this child a planned pregnancy? 
+abcd$devhx_6_p[abcd$devhx_6_p==999] <- NA
+```
+
+# Exclusions {.tabset}
+
+The original work focus on several exclusion criteria. These related to the MRI and Demographic variables. We follow the same order of exclusion criteria here.
+
+## MRI Exclusions
+
+The study has several MRI dependent variables, Amygdalar volume, ACC Cortical Thickness and Area, ACC Fractional anisotropy and resting state covariation amongst the amygdala and cingulo-opercular network. Due to the multiverse varying independent, dependent and mediating variables, to compare apples-to-apples, so to speak, we use the exclusion criteria to achieve a single final dataset. That way we can attribute effect differences across variables types and not have to decipher the issue of the [crud factor](https://journals.sagepub.com/doi/full/10.1177/2515245920917961).
+
+The [original work](www.doi.org/10.1017/S0954579419000580) excluded participants on several important factors. In this scenario we use [case_when](https://www.rdocumentation.org/packages/dplyr/versions/0.7.8/topics/case_when) to assigned a numerical value of `1` to the new `exclude` within the [mutate](https://dplyr.tidyverse.org/reference/mutate.html). This way at the instance that the *when* rule is met, the numerical value of 1 is assigned, otherwise the `TRUE ~ 0` assigns a value of 0. Then we can differentiate by the variables we do and don't exclude.
+
+* Structural GM: Excluded participants if moderately or severely impacted by (1) motion, (2) intensity inhomogeneity, (3) white matter underestimation, (4) pial overestimation, or (5) magnetic susceptibility artifact.
+  + In the NDA data dictionay, these values are: 0 = absent; 1 = mild; 2 = moderate; 3 = severe
+* rsfMRI: Average framewise displacement value > .55mm and field map not collected within two scans.
+
+* Not usedd due to DWI preprocessing differences across waves: Structural WM: Average framewise displacement value > 1.50mm
+  
+```{r message=FALSE, warning=FALSE}
+# excluding subjects (1 = EXCLUDE; 0 = INCLUDE)
+abcd = abcd %>% 
+  mutate(exclude = case_when(QC_T1_motion > 1 ~ 1,
+                             QC_T1_inhomog > 1 ~ 1,
+                             QC_T1_wmunder > 1 ~ 1,
+                             QC_T1_pial > 1 ~ 1,
+                             QC_T1_artifact > 1 ~ 1, # End T1 structural exclusions
+                             FDmot_FC > .55 ~ 1, # rsfmri exclude
+                             rsfmri_fieldmap_0 == 1 ~ 1, # field map not collected within two scans prior
+                             TRUE ~ 0))
+
+```
+
+We can summarize in a table the number of participants that are excluded from the total sample  = `r nrow(abcd)`. We use the a combination of [group_by](https://www.rdocumentation.org/packages/dplyr/versions/0.7.8/topics/group_by) and [summarize](https://www.rdocumentation.org/packages/Hmisc/versions/4.6-0/topics/summarize) within tidyverse + [kable](https://bookdown.org/yihui/rmarkdown-cookbook/kable.html) to calculate the N in the `exclude` variable calculated above. We put this into a puuuuurdy table. 
+
+```{r message=FALSE, warning=FALSE}
+abcd %>% 
+  group_by(exclude) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Participants included versus excluded across MRI variable",
+        col.names = c("Include(0)/Exclude(1)", "Sample (n)")) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+
+```
+
+If we were curious, we could applying these filters to get a count number for each of these variables, too. These are reported for the total of each individual QC criteria.
+
+```{r}
+abcd %>% 
+  filter(QC_T1_inhomog > 1) %>% 
+  summarize("N > mild Inhomogeneity"= n())
+abcd %>% 
+  filter(QC_T1_wmunder > 1) %>% 
+  summarize("N > mild wm underest"= n())
+abcd %>% 
+  filter(QC_T1_pial > 1) %>% 
+  summarize("N > mild pial underest"= n())
+abcd %>% 
+  filter(QC_T1_artifact > 1) %>% 
+  summarize("N > mild artifact"= n())
+
+
+abcd %>% 
+  filter(FDmot_FC > .55) %>% 
+  summarize("N rsFMRI Motion > .55"= n())
+
+abcd %>% 
+  filter(rsfmri_fieldmap_0 == 1) %>% 
+  summarize("N rsFMRI fieldmap iss"= n())
+```
+
+
+Now we use the [filter](https://www.rdocumentation.org/packages/dplyr/versions/0.7.8/topics/filter) function to select a subsample that we will include based on the MRI QC values. By applying this filter, we will get the result of participants that should match the total sample subtracting the number in the `exclude == 1` bin, or `r nrow(abcd) - sum(abcd$exlude)`
+
+```{r message=FALSE, warning=FALSE}
+abcd_2 <- abcd %>% 
+  filter(exclude == 0)
+
+```
+
+## Self-Report/Demo Exclusions
+
+In addition to the MRI exclusion criteria, the original study also had several exclusion for the parental variables. The exclusions here are executed in order of the below code.
+
+**First**
+
+* If the person that came to the research facility *was not* the biological parent. Below we report how whether the guardian attending the study visit is a (1) biological mother, (2) biological father, (3) Adoptive Parent, (4) Custodial parent, (5) other.
+  ++ "excluded participants who attended the research center supervised by someone other than their biological parent, in order to increase the validity of the parent reported measures." pg 689
+  
+```{r message=FALSE, warning=FALSE}
+abcd_2 %>% 
+  group_by(demo_prim) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Participants Guardian for Visit",
+        col.names = c("Type of Guardian", "Count")
+        ) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+
+# selection only biological mother (1) or biological father  (2)
+abcd_2 <- abcd_2 %>% 
+  filter(demo_prim == 1 | demo_prim == 2)
+
+abcd_2 %>% 
+  group_by(demo_prim) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Participants Guardian for Visit: After Excluding ",
+        col.names = c("Type of Guardian", "Count")
+        ) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+```
+
+**Second**
+
+* Participants that were twins/triplets. Descriptive after non biological mother/father excluded. (1) Only child, (2) Sibling, (3) Twins/Triplet 
+  +  "twin pairs were excluded" pg 689
+    
+```{r message=FALSE, warning=FALSE}
+abcd_2 %>% 
+  group_by(rel_relationship) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Sibling Relationship status: Overall",
+        col.names = c("Sibling Type", "Count")
+        ) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+# selection only siblings & single children
+abcd_2 <- abcd_2 %>% 
+  filter(rel_relationship == 0 | rel_relationship == 1)
+
+abcd_2 %>% 
+  group_by(rel_relationship) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Sibling Relationship status: After Excluding Twins/Triplets ",
+        col.names = c("Sibling Type", "Count")
+        ) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+```
+
+**Third**
+
+* Randomly exclude one child from siblings. After excluding for non biological parents and twins/triplets 
+ + "from each of # sibling pairs, 1 child was randomly excluded from the analysis". pg 689
+ 
+```{r message=FALSE, warning=FALSE}
+# selecting only single sibiling pair
+# "from each of 83 sibling pairs, 1 child was randomly excluded from the analysis"... here grouping subjects by family ID, then filtering random row number via sample(1)
+abcd_2 <- abcd_2 %>% 
+  group_by(rel_family_id) %>% 
+  filter(row_number() == sample(1)) 
+
+
+abcd_2 %>% 
+  group_by(rel_relationship) %>% 
+  summarize(N = n()) %>% 
+  kbl(caption = "Sibling Relationship status: After randomly selecting", 
+        col.names = c("Sibling Type", "Count")
+        ) %>% 
+  kable_styling("striped",
+                full_width = T, font_size = 12, html_font = 'Times')
+
+```
+
+
+
+
+Given that we have our final list of subjects, we can see if we hace an duplicates values for the subject IDs. We excluded duplicates in the first rmarkdown file when we cooked up the data, but we want to make sure.
+
+```{r message=FALSE, warning=FALSE}
+
+abcd_2 %>% 
+  get_dupes(subjectkey) %>% 
+  summarize(Duplicates = n())
+```
+
+
+## Renaming/Composites/regressed brain
+
+### Renaming 
+
+First, let's rename variables so they are easier to view and don't require excessively long input names
+
+```{r message=FALSE, warning=FALSE}
+abcd_3 <- abcd_2 %>% 
+  rename("FES_pQ1" = fam_enviro1_p, "FES_pQ2" = fam_enviro2r_p, "FES_pQ3" = fam_enviro3_p,
+         "FES_pQ4" = fam_enviro4r_p, "FES_pQ5" = fam_enviro5_p, "FES_pQ6" = fam_enviro6_p,
+         "FES_pQ7" = fam_enviro7r_p, "FES_pQ8" = fam_enviro8_p, "FES_pQ9" = fam_enviro9r_p,
+         "KSADSpConf" = kbi_p_conflict,
+         "PMon_yQ1" = parent_monitor_q1_y, "PMon_yQ2" = parent_monitor_q2_y, "PMon_yQ3" = parent_monitor_q3_y,
+         "PMon_yQ4" = parent_monitor_q4_y, "PMon_yQ5" = parent_monitor_q5_y,
+         "CRPBI_yQ1" = crpbi_parent1_y, "CRPBI_yQ2" = crpbi_parent2_y, "CRPBI_yQ3" = crpbi_parent3_y,
+         "CRPBI_yQ4" = crpbi_parent4_y, "CRPBI_yQ5" = crpbi_parent5_y,
+         "FES_yQ1" = fes_youth_q1, "FES_yQ2" = fes_youth_q2, "FES_yQ3" = fes_youth_q3,
+         "FES_yQ4" = fes_youth_q4, "FES_yQ5" = fes_youth_q5, "FES_yQ6" = fes_youth_q6,
+         "FES_yQ7" = fes_youth_q7, "FES_yQ8" = fes_youth_q8, "FES_yQ9" = fes_youth_q9,
+         "Par_Inc" = demo_comb_income_v2, "Par_Edu" = demo_prnt_ed_v2, "Pln_Preg" = devhx_6_p,
+         "ASRS_t" = asr_scr_totprob_t, "Par_Bio" = demo_prnt_prtnr_bio, "Age" = interview_age.x,
+         "Sep_Status" = demo_prnt_marital_v2
+         )
+
+```
+
+### Composites for Scales
+
+In our multiverse we consider the effect of the broad overaching `family environment factor` the subfactors `Demographic`, `Parent` and `Child`. But we also consider the measurement items for measures that are fit in these factors, such as:
+
+* FES youth 
+* FES parent
+* CRPBI youth 
+* Parental monitoring 
+
+Here we use the combination of `mutate` and [rowMeans](https://www.rdocumentation.org/packages/fame/versions/1.03/topics/rowMeans). This essentially takes for all values along the row for each variable that `starts_with()` a defined name, such as *FES_yQ* for the FES Youth measure which has Q1-Q9, and computes a mean for the row and saves it into the `FES_y_mean` variable in the dataset.
+
+```{r message=FALSE, warning=FALSE}
+#Create averages for test
+abcd_3 <- abcd_3 %>%
+  ungroup() %>% 
+  mutate(FES_y_mean = rowMeans(dplyr::select(., starts_with("FES_yQ"))),
+         FES_p_mean = rowMeans(dplyr::select(., starts_with("FES_pQ"))),
+         CRPBI_mean = rowMeans(dplyr::select(., starts_with("CRPBI_yQ"))),
+         PMON_y_mean = rowMeans(dplyr::select(., starts_with("PMon_yQ"))))
+
+
+```
+
+### Composite Brain 
+
+As stated in the original paper, "*we had no hypotheses related to laterality effects, left and right, rostral and caudal ACC measures were averaged to create a summary ACC score. To create an average amygdala volume score, right and left amygdala volumes were averaged.*" Thus, here we compute the average for ACC and Amygdala values.
+```{r message=FALSE, warning=FALSE}
+#Create averages for brain
+abcd_3 <- abcd_3 %>%
+  ungroup() %>% 
+  mutate(Amyg_Vol = rowMeans(dplyr::select(., c("L_Amyg_vol", "R_Amyg_vol"))),
+         ACC_Thick = rowMeans(dplyr::select(., c("L_ACC_thic","R_ACC_thic"))),
+         ACC_Area = rowMeans(dplyr::select(., c("L_ACC_area","R_ACC_area"))),
+         #ACC_FA = rowMeans(select(., c("L_Rost_ACC","R_Rost_ACC","L_Caud_ACC","R_Caud_ACC"))), Exclude preprocessing
+         CingOp_Amyg = rowMeans(dplyr::select(., c("Lamyg_CingOperc","Ramyg_CingOperc"))),
+         GM_brain_vol = rowMeans(dplyr::select(., c("L_Cort_vol","R_Cort_vol")))
+         )
+
+
+```
+
+#### Regress out brain vol from FA & GM and z-score
+
+As stated in the paper, 
+*Gray matter measures were additionally residualized for total brain volume and ABCD site (sum of left and right cortical volume and white matter volume)..... Due to the large scale of the cortical area and subcortical volume measures, these measures were converted to z scores. Separate models were run for each modality of the same structure (T1 ACC, T1 amygdala, DTI, and resting-state fMRI).*
+
+So first we start by regressing out the signal for for GM:
+
+* Amyg_vol
+* ACC_Thick
+* ACC_Area
+
+
+This is performed by using the [residuals](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/residuals) in combination with the linear [lm](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/lm) regressing out the whole brain volumes from our variables of interest
+```{r message=FALSE, warning=FALSE}
+# ACC GM
+abcd_3$ACC_Area_r <- residuals(lm(ACC_Area ~ GM_brain_vol + as.factor(abcd_site), data = abcd_3, na.action = na.exclude))
+abcd_3$ACC_Thick_r <- residuals(lm(ACC_Thick ~ GM_brain_vol + as.factor(abcd_site) , data = abcd_3, na.action = na.exclude))
+
+# Amygdala GM
+abcd_3$Amyg_Vol_r <- residuals(lm(Amyg_Vol ~ GM_brain_vol + as.factor(abcd_site), data = abcd_3, na.action = na.exclude))
+
+
+```
+
+Now, we z-score our variables using the [scale](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/scale) function. In other words, we center the data for the variable (i.e., mean becomes zero) and then standardizing by dividing by the standard deviation
+
+```{r message=FALSE, warning=FALSE}
+# Scale GM - Amygdala + ACC
+abcd_3$ACC_Area_z <- scale(x = abcd_3$ACC_Area_r, center = TRUE, scale = TRUE)
+abcd_3$ACC_Thick_z <- scale(x = abcd_3$ACC_Thick_r, center = TRUE, scale = TRUE)
+abcd_3$Amyg_Vol_z <- scale(x = abcd_3$Amyg_Vol_r, center = TRUE, scale = TRUE)
+
+```
+
+Save updated dataset
+```{r message=FALSE, warning=FALSE}
+write.csv(x = abcd_3, file = "ABCD_Updated_2021_11_15.csv")
+```
+
+***
+***
+
+
+# Descriptives/Corr {.tabset}
+
+Now that we have code, recalculated and transformed our variables based on the original manuscript, we can summarize some of these statistics. First, we can do a simple table summary of some demographic characteristics. Then we can view the distributions of several key variables for our models.
+
+
+## Demographic Charactistics
+
+Below we summarize the variables Age, Sex, Income, Education, Race, Parental and Youth self-reported Puberty. We use the [table1](https://cran.r-project.org/web/packages/table1/vignettes/table1-examples.html) function in R to create html output tables that calculate and summarize this information in b-e-autiful way.
+We summarize these descriptives in two ways. First, we report the "full sample data" differentiate by the first and second release for the Baseline data, which we had coded above (i.e., differentiated by the release 0 = before Aug 08, 2017). Second, we summarize the descriptive statistics for our sample after taking into account all of our excluwion criteria from the original paper. 
+
+```{r message=FALSE, warning=FALSE}
+
+# Summary between releases
+table1::label(abcd$interview_age.x) <- "Age (Months)"
+table1::label(abcd$p_puberty) <- "Parent Report - PDS"
+table1::label(abcd$y_puberty) <- "Youth Report - PDS"
+table1::label(abcd$sex) <- "Sex"
+table1::label(abcd$income_base) <- "Family Income"
+table1::label(abcd$education) <- "Education"
+table1::label(abcd$race) <- "Race"
+table1::label(abcd$marital_stat) <- "Parents' Marital Status"
+table1::label(abcd$DateAfter_Release1) <- "Before/After Aug 30, 2017 Cut-off "
+
+
+table1::table1(~interview_age.x + p_puberty + y_puberty + sex + income_base + education + race + marital_stat + DateAfter_Release1 | as.factor(Date_after), data = abcd)
+
+#excluded sample
+
+
+# Summary between releases
+table1::label(abcd_3$Age) <- "Age (Months)"
+table1::label(abcd_3$p_puberty) <- "Parent Report - PDS"
+table1::label(abcd_3$y_puberty) <- "Youth Report - PDS"
+table1::label(abcd_3$sex) <- "Sex"
+table1::label(abcd_3$income_base) <- "Family Income"
+table1::label(abcd_3$education) <- "Education"
+table1::label(abcd_3$race) <- "Race"
+table1::label(abcd_3$marital_stat) <- "Parents' Marital Status"
+table1::label(abcd_3$DateAfter_Release1) <- "Before/After Aug 30, 2017 Cut-off "
+
+
+table1::table1(~Age + p_puberty + y_puberty + sex + income_base + education + race + marital_stat + DateAfter_Release1, data = abcd_3)
+
+
+```
+
+## Distribution 
+
+Now that we have some numerical representation of demographics, we can take a peak at the distribution for a couple key variables that will comprise our subfactors:
+
+* Demographic: Parental Education and Income, ASRS total,
+* Parental: KSADS, FES parent
+* Child: FES parent, CRPBI youth, Parental Moniting Youth
+
+and the overaching Family Environment Factor. Then, our mediators:
+
+* Parental self-reported puberty (PDS)
+* Youth self-reported puberty (PDS)
+
+and finally our dependent brain variables:
+
+* Amgygdala volume z-score w/ GM volume regressed
+* ACC Cortical Area z-scored w/ GM volume regressed
+* ACC Thickness z-scored w/ GM volume regressed
+* ACC FA w/ WM volume regressed [excluded due to DWI preprocessing changes] 
+* Cingulo-opercular ~ Amygdala function connectivity
+
+```{r message=FALSE, warning=FALSE}
+abcd_3 %>% 
+  pivot_longer(c(Age, Par_Edu, Par_Inc,
+                 p_puberty, y_puberty, ASRS_t,
+                 FES_y_mean, FES_p_mean, CRPBI_mean, PMON_y_mean,
+                 KSADSpConf, Amyg_Vol_z, ACC_Area_z, ACC_Thick_z, 
+                 Lamyg_CingOperc, Ramyg_CingOperc), 
+  names_to = "Scale", values_to = "scores") %>% 
+  ggplot(aes(x = scores)) +
+  geom_density() +
+  facet_wrap(vars(Scale), ncol = 3, scales = "free") +
+  labs(x = "Scales", y = "Score Distributions", 
+       caption = "_y = youth, _p = parental; FES, CRPBI, PMON are averages of items.") +
+  theme_minimal()
+
+
+```
+
+## Correlation Matrices
+
+In addition to the above information, we use a combination of [cor()](https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/cor), `kable` and [corrplot](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html) to summarize the standardized covariation amongst our variables, or the Pearson's r coefficient. 
+
+### Demo Vars
+
+This correlation matrix reports the associations among the `demographic characteristics`: Income, Parental Education, Biological Parent, and Planned Pregnancy (0/1)
+
+We report it in a table and a heatmap.
+```{r}
+Demo = data.frame("Par_Edu" = abcd_3$Par_Edu, "Par_Inc" = abcd_3$Par_Inc, 
+                  "Biol_Par" = abcd_3$Par_Bio, "Plan_Preg" = abcd_3$Pln_Preg)
+
+cor_demo = cor(Demo, use = "pairwise", method = "pearson")
+
+
+knitr::kable(cor_demo, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+corrplot(cor_demo, type = "upper", 
+         method =  "shade", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',
+         mar=c(1, 1, 1, 1))
+```
+
+
+
+### Combined: SR Puberty 
+
+This correlation matrix reports the associations among the `puberty for males/females` for child self-report and parental self-report.
+Because some items are sex specific, such as deep voice and facial hair (males) and breast growth and menstruation (females), we re-ran these for each sex individually.
+
+We report it in a table and a heatmap. 
+
+```{r}
+Pubert_data = data.frame(y_height = abcd_3$y_pds_ht,
+                         y_skin = abcd_3$y_pds_skin,
+                         y_BodHair = abcd_3$y_pds_bdhair,
+                         y_BrstGrw = abcd_3$y_pds_brstgrw,
+                         y_Menst = abcd_3$y_pds_menstrual,
+                         y_DpVoic = abcd_3$y_pds_dpvoic,
+                         y_FaceHair = abcd_3$y_pds_fcHair,
+                         p_height = abcd_3$p_pds_ht,
+                         p_skin = abcd_3$p_pds_skin,
+                         p_BodHair = abcd_3$p_pds_bdhair,
+                         p_BrstGrw = abcd_3$p_pds_brstgrw,
+                         p_Menst = abcd_3$p_pds_menstrual,
+                         p_DpVoic = abcd_3$p_pds_dpvoic,
+                         p_FaceHair = abcd_3$p_pds_fcHair,
+                         Youth_PDS = abcd_3$y_puberty,
+                         Parent_PDS = abcd_3$p_puberty
+                         
+                    )
+
+cor_pubert = cor(Pubert_data, use = "pairwise", method = "pearson")
+
+
+knitr::kable(cor_pubert, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+corrplot(cor_pubert, type = "upper", 
+         method = "shade", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',
+         mar=c(1, 1, 1, 1))
+```
+
+#### Male *only*, Puberty
+
+Correlation table & heatmap reported for Males.
+
+```{r}
+### Puberty female
+abcd_3_male <- abcd_3 %>% 
+  filter(sex == "M")
+Male_Data = data.frame(y_height = abcd_3_male$y_pds_ht,
+                         y_skin = abcd_3_male$y_pds_skin,
+                         y_BodHair = abcd_3_male$y_pds_bdhair,
+                         y_DpVoic = abcd_3_male$y_pds_dpvoic,
+                         y_FaceHair = abcd_3_male$y_pds_fcHair,
+                         p_height = abcd_3_male$p_pds_ht,
+                         p_skin = abcd_3_male$p_pds_skin,
+                         p_BodHair = abcd_3_male$p_pds_bdhair,
+                         p_DpVoic = abcd_3_male$p_pds_dpvoic,
+                         p_FaceHair = abcd_3_male$p_pds_fcHair
+                    )
+
+cor_pubert_male = cor(Male_Data, use = "pairwise", method = "pearson")
+
+
+knitr::kable(cor_pubert_male, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+corrplot(cor_pubert_male, type = "upper", 
+         method = "shade", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',
+         mar=c(1, 1, 1, 1))
+```
+
+#### Female *only*, Puberty
+ 
+Correlation table & heatmap reported for Females.
+
+```{r}
+### Puberty female
+abcd_3_female <- abcd_3 %>% 
+  filter(sex == "F")
+Female_data = data.frame(y_height = abcd_3_female$y_pds_ht,
+                         y_skin = abcd_3_female$y_pds_skin,
+                         y_BodHair = abcd_3_female$y_pds_bdhair,
+                         y_BrstGrw = abcd_3_female$y_pds_brstgrw,
+                         y_Menst = abcd_3_female$y_pds_menstrual,
+                         p_height = abcd_3_female$p_pds_ht,
+                         p_skin = abcd_3_female$p_pds_skin,
+                         p_BodHair = abcd_3_female$p_pds_bdhair,
+                         p_BrstGrw = abcd_3_female$p_pds_brstgrw,
+                         p_Menst = abcd_3_female$p_pds_menstrual
+                    )
+
+cor_pubert_corr = cor(Female_data, use = "pairwise", method = "pearson")
+
+
+knitr::kable(cor_pubert_corr, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+corrplot(cor_pubert_corr, type = "upper", 
+         method = "shade", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',
+         mar=c(1, 1, 1, 1))
+```
+
+
+
+
+
