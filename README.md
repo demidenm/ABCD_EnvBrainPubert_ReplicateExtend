@@ -17,6 +17,7 @@ the Stage 1 folder includes two folders: Manuscript and Code.
     + (3) fits the factors for our models and saves the individual scores for each subject;
     + (4) uses fake data to demonstrate the code for the replication (Aim 1) and multiverse extension (Aim 2) that will be used with the full data.
 
+The associated Stage 1 preregistration for Aim 1 can be found at: https://doi.org/10.17605/OSF.IO/GXK96
 
 ## Stage 2 Analyses/Results
 The code will be added to a subsequent folder with the associated results upon completion of analyses.
