@@ -380,67 +380,6 @@ combined_OG_Rep %>%
 
 
 
-I have considered how we may conduct a permutation test to generate a distribution for our replicated effects to which we can compare the 'populate estimate' of the original, and see whether they significantly differ. But that may be too much given Aim 1 is not the crux of the project and it's a conceptual replication?
-
-consider... https://www.frontiersin.org/articles/10.3389/fpsyg.2017.01455/full
-```{r eval=FALSE, include=FALSE}
-library(foreach)
-
-iv = c("Fam_Env","Child")
-dv = c("Amygdala_Vol","ACC_Thick")
-m = c("Pubert_YR","Pubert_PR")
-cov1 = "Age"
-# Step 1
-  # Creating variable permutations for lists in X, Y, M, Cov
-var_permutations <- as.matrix(expand.grid(X = iv, 
-                                          Y = dv, 
-                                          M = m, 
-                                          Age = cov1))
-
-cl <- parallel::makeCluster(4)
-doParallel::registerDoParallel(cl)
-
-permutes_boot <- apply(X = var_permutations, 1, function (combos) {
-require(glue)
-lapply(1:20, function(i) { # here, like lapply(1:200, function(x), we do parallized vs
-    permuted.df <- data_d[combos] # updated data_d with the data.frame where the variables exist
-    #colnames(permuted.df) <- names(combos)
-    permuted.df <- sample_n(tbl = permuted.df, size = 123, 
-                                    replace = TRUE); 
-    
-    X = as.character(combos[1])
-    Y = as.character(combos[2])
-    M = as.character(combos[3])
-    Age = as.character(combos[4])
-    
-    mediation_model <- glue('
-    # Direct Effect (X->Y), c - path
-    {Y} ~ c*{X} + {Age}
-    
-    # Meidation (X -> M), a path
-    {M} ~ a*{X} + Age
-    
-    # Mediation (M -> Y), b path 
-    {Y} ~ b*{M} 
-    
-    # Indirect Effect (a*b)
-    ind := a*b
-    
-    # Total Effect
-    total := c + (a*b)
-    ')
-      fit = lavaan::sem(model = mediation_model, 
-                        data = permuted.df,
-                        se = "bootstrap",, 
-                        mimic = "Mplus")
-      return(fit)
-    })
-  
-})
-
-```
-
-
 # Aim 2 {.tabset}
 
 ## Creating list of variables
