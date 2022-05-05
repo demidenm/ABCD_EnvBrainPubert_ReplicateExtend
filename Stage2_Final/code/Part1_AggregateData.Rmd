@@ -1,0 +1,353 @@
+---
+title: "NeuroImage:Reports - Aggregating Data"
+author: "<h3>by Michael Demidenko</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: yes
+    number_sections: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    code_folding: hide
+    self_contained: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+tags: []
+subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
+---
+# Project Description
+This is an extension and multiverse analysis of a publication in Development and Psychopathology ([2020](www.doi.org/10.1017/S0954579419000580));
+
+*Pubertal development mediates the association between family environment and brain structure and function in childhood.* 
+> By Sandra Thijssen, Paul Collins and Monica Luciana.
+
+This project is co-authored by:
+Michael I. Demidenko, Dominic P. Kelly, Felicia Hardi, Ka I. Ip, Sujin Lee, Sunghyun Hong, Sandra Thijssen, Monica Luciana, Hannah Becker, & Daniel P Keating
+
+> This Rmarkdown file contains the code for aggregating the ABCD variables
+
+
+*Note: the option for this rmarkdown is `code_folding: hide`, so the code is hidden. Please select `Code` --> `Show All Code` to unhide all code blocks. Otherwise, in each section you can simply click the `Code` button to show the respective code chunk.*
+
+Useful R/Mplus links:
+
+* Base R [cheatsheets](https://www.povertyactionlab.org/sites/default/files/r-cheat-sheet.pdf) 
+* Using [Tabsets](https://bookdown.org/yihui/rmarkdown-cookbook/html-tabs.html)
+* Statistical Analyses in R from [Russel Poldrack](https://statsthinking21.github.io/statsthinking21-R-site/)
+* Instructional videos from [Karandeep Singh](https://www.youtube.com/channel/UC7eRNr1Pprls2aU5WWPz15Q/videos)
+
+***
+***
+
+# Preparing packages {.tabset}
+
+In order to perform the replication and extension of the original [work](www.doi.org/10.1017/S0954579419000580), it is necessary to identify all of the variables and prepackages these variables from the downloaded NDA dataset. Before that, we install and load the necessary packages and functions, then pull and aggregate the files and
+
+After this step is complete, you can work on the second Rmarkdown file.
+The associated variables and data dictionary labels are covered below.
+
+## Install packages 
+
+Here I include a list of packages that are checked and automatically installed that will be required to run this script from start-to-finish.
+
+```{r message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse)
+```
+
+## Load packages
+
+At each instance, load packages.
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse) 
+```
+
+# Prepare data {.tabset}
+
+## Aggregate data 
+
+Here we use code from `Mike Angstadt`, available on [github](https://github.com/mangstad/Misc_utils/blob/master/abcd_functions.R) which uses an R [function](https://www.tutorialspoint.com/r/r_functions.htm) to aggregate data across text files from the downloaded ABCD [data repository](https://nda.nih.gov/abcd). 
+`read.abcd` function readings in the files, tab separated, skipping 1 row and not including descriptives. It pulls remaining data and columns into table. Then, `multi.merge` takes in different dataframes that consistent of important text files and joins then `by` specified variables (we focus on subject key and event name, as these are consistent (or should be) across the .txt files).
+
+```{r message=FALSE, warning=FALSE}
+read.abcd = function(file, sep="\t",skip=1,cols=NULL,descriptions=FALSE) {
+  headers = names(read.table(file,sep=sep,header=T,stringsAsFactors=F)[-1,])
+  if (descriptions) {
+    descrip = names(read.table(file,sep=sep,header=T,stringsAsFactors=F,skip=1))
+  }
+  data = read.table(file,sep=sep,header=T,stringsAsFactors=F,skip=skip)
+  names(data) = headers
+  if (!is.null(cols)) {
+    data = subset(data,select=cols)
+  }
+  if (descriptions) {
+    list(data=data,descrip=descrip)
+  } else {
+    data
+  }
+}
+
+multi.merge = function(...,by=NULL) {
+  Reduce(function(x,y) merge(x,y, all=TRUE,by=by), list(...))
+}
+
+```
+
+## Compile ABCD data
+
+Using the above functions, we cook up the dataset. Specifically, we set `mergecols` to the values that we want to merge by. We us [c()](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/c) to concatenate values into a list. As mentioned, our list consists of subjectkey and eventname. Then, using the `read.abcd` function defined above, we read in the file, and using the `%>%` or [pipe](https://style.tidyverse.org/pipes.html) function in the conjunction with [select()](https://dplyr.tidyverse.org/reference/select.html) we subset the values that we want to pull from that data. For example, for *read.abcd("ABCDStudyNDA_1182451/pdem02.txt")* we subset the subjectkey and eventname that will be used for `by` in column merge, and then our variables of interest. The variables we used are defined and labeled on the 
+
+The variables identified in the manuscript we cross-reference for the associated text file name on the NDA NIMH [data dictionary ABCD release 3.0](https://nda.nih.gov/data_dictionary.html?submission=ALL&source=ABCD%2BRelease%2B3.0). The name for the .txt file is associated with the `short name` on the NIMH data archive. Within each variable we then pull the associated variables. The list of these are below:
+
+  
+**Demographics**:
+
+*	*General*: age, sex, race/ethnicity, family ID and child sibling status [acspsw03](https://nda.nih.gov/data_structure.html?short_name=acspsw03)
+* *Factor*:
+  + Demographic Income, Education, biological parents, and who guardian during visit is in [pdem02](https://nda.nih.gov/data_structure.html?short_name=pdem02)
+  + Planned pregnancy [devhx_6_p](https://nda.nih.gov/data_structure.html?short_name=dhx01)
+  + total problems score, Raw, t score ASEBA[abcd_asrs01](https://nda.nih.gov/data_structure.html?short_name=abcd_asrs01) 
+* Site ID [abcd_lt01](abcd_lt01)
+* Biological parent [pdem02](https://nda.nih.gov/data_structure.html?short_name=pdem02)
+
+**Child-self reported Questions**
+
+* Parental monitory survey [pmq01](https://nda.nih.gov/data_structure.html?short_name=pmq01)
+* Maternal Acceptance CRPBI [crpbi01](https://nda.nih.gov/data_structure.html?short_name=crpbi01)
+* Family Environment Scale (Phenx) Youth [abcd_fes01](https://nda.nih.gov/data_structure.html?short_name=abcd_fes01)
+
+**Parent Reported Information**
+
+* Family Environment Scale (Phenx) Parent [fes02](https://nda.nih.gov/data_structure.html?short_name=fes02)
+* KSADS item measuring parent/child relationship [dibf01](https://nda.nih.gov/data_structure.html?short_name=dibf01)
+
+**Puberty Measures**
+
+* Tabulated PDS Puberty value for Female [abcd_ssphp01](https://nda.nih.gov/data_structure.html?short_name=abcd_ssphp01)
+* Tabulated PDS Puberty value for Female [abcd_ssphy01](https://nda.nih.gov/data_structure.html?short_name=abcd_ssphy01)
+* Individual PDS Puberty Items for Youth Report [abcd_ypdms01](https://nda.nih.gov/data_structure.html?short_name=abcd_ypdms01)
+* Individual PDS Puberty Items for Parent Report [abcd_ppdms01](https://nda.nih.gov/data_structure.html?short_name=abcd_ppdms01)
+
+**Brain Measures**
+
+*Gray Matter*
+
+* Amygdala volume, L/R [abcd_smrip201](https://nda.nih.gov/data_structure.html?short_name=abcd_smrip201)
+* Anterior Cingulate Cortex Thickness & volume, L/R [abcd_mrisdp101](https://nda.nih.gov/data_structure.html?short_name=abcd_mrisdp101)
+* Total Cortical volume (regressed out) [abcd_mrisdp101](https://nda.nih.gov/data_structure.html?short_name=abcd_mrisdp101)
+*	QC T1 Motion, WM Underestimation, Inhomogeneity score, pial overestimation score, artifact score [freesqc01](https://nda.nih.gov/data_structure.html?short_name=freesqc01)
+
+*White Matter*
+
+* Rostral/caudal Anterior Cingulate FA, L/R [abcd_dti_p101](https://nda.nih.gov/data_structure.html?short_name=abcd_dti_p101)
+*	All WM Tract volume (regressed out) [abcd_dti_p101](https://nda.nih.gov/data_structure.html?short_name=abcd_dti_p101)
+*	QC WTI Framewise Displacement, motion [abcd_dti_p101](https://nda.nih.gov/data_structure.html?short_name=abcd_dti_p101)
+    
+*Resting state*
+
+*	L/R Amygdala – Cingulo-Opercular Network connectivity [mrirscor02](https://nda.nih.gov/data_structure.html?short_name=mrirscor02)
+*	Function Connectivity Framewise displacement, motion [mrirscor02](https://nda.nih.gov/data_structure.html?short_name=mrirscor02)
+*	Resting state fieldmap wrong locus [mriqcrp102](https://nda.nih.gov/data_structure.html?short_name=mriqcrp102)
+
+
+```{r echo=TRUE}
+setwd("./")
+
+#merging by
+mergecols = c("subjectkey","eventname")
+
+
+# Demographics + parental education + parental psychopathology, relationship status, pregnancy
+
+par_inc_edu = read.abcd("ABCDStudyNDA_1182451/pdem02.txt") %>% 
+  select(subjectkey,eventname,
+         demo_comb_income_v2, 
+         demo_prnt_ed_v2,
+         demo_prim, # you are the: 1 = Childs Biological Mother 2 = Childs Biological Father 3 = Adoptive Parent ; 4 = Childs  5 = Other Otro,
+         demo_prnt_marital_v2, # are you now married, widowed, divorced, separated, living with partner
+         demo_prnt_prtnr_bio # is your partner the child's biological parent? (1/0)
+         )
+
+
+planned_pre = read.delim("ABCDStudyNDA_1182451/dhx01.txt",sep = "\t", header = TRUE)[-1,] %>% rename(eventname = visit) %>% 
+  select(subjectkey, eventname,
+         devhx_6_p) # used diff code due to compiling error
+
+par_psychopath = read.abcd("ABCDStudyNDA_1182451/abcd_asrs01.txt") %>% 
+  select(subjectkey,eventname,
+         asr_scr_totprob_total, # total problems score
+         asr_scr_totprob_r, # raw score ASEBA
+         asr_scr_totprob_t #t score in relation to norms for each gender at 18-35 and 36-59, based on national probability samples
+  )
+
+
+
+
+
+# ***Child-reported questionnaires*** included an abbreviated version of the 
+
+#  Parental Monitoring Survey (Chilcoat & Anthony, 1996). 
+par_monitoring = read.abcd("ABCDStudyNDA_1182451/pmq01.txt") %>% 
+  select(subjectkey,eventname,
+         parent_monitor_q1_y:parent_monitor_q5_y
+         )
+
+# maternal acceptance scale of the Child Report of Parent Behavior Inventory (Schaefer, 1965) -- there is an item for a *second caregiver* too
+child_accept = read.abcd("ABCDStudyNDA_1182451/crpbi01.txt") %>% 
+  select(subjectkey,eventname,
+         crpbi_parent1_y:crpbi_parent5_y
+         )
+
+child_conflict =  read.abcd("ABCDStudyNDA_1182451/abcd_fes01.txt") %>% 
+  select(subjectkey,eventname,
+         fes_youth_q1:fes_youth_q9
+         )
+# ***parent-reported information*** included an abbreviated version of the 
+
+# the conflict scale from the Family Environment Scale (FES; Moos & Moos, 1976)
+family_conflict = read.abcd("ABCDStudyNDA_1182451/fes02.txt") %>% 
+  select(subjectkey,eventname,
+         fam_enviro1_p:fam_enviro9r_p
+         )
+# Complimented by one background item from the Kiddie Schedule for Affective Disorders and Schizophrenia (Kaufman et al., 1997) measuring the relationship between the parent and the child (“in general, how do you and your child get along?” using a 3-point Likert scale ranging from very well to a lot of conflict).
+kiddie_parchildrela = read.abcd("ABCDStudyNDA_1182451/dibf01.txt") %>% 
+  select(subjectkey,eventname,
+         kbi_p_conflict
+         )
+
+
+
+# select puberty
+final_p_pubert = read.abcd("ABCDStudyNDA_1182451/abcd_ssphp01.txt") %>%
+  select(subjectkey,eventname,
+         pds_p_ss_female_category_2,
+         pds_p_ss_male_category_2)
+
+final_y_pubert = read.abcd("ABCDStudyNDA_1182451/abcd_ssphy01.txt") %>%
+  select(subjectkey,eventname,
+         pds_y_ss_female_category_2,
+         pds_y_ss_male_cat_2)
+
+youth_puberty = read.abcd("ABCDStudyNDA_1182451/abcd_ypdms01.txt") %>%
+  select(subjectkey,eventname,
+         y_pds_ht = pds_ht2_y,
+         y_pds_skin = pds_skin2_y,
+        y_pds_bdhair =  pds_bdyhair_y,
+         y_pds_brstgrw = pds_f4_2_y, # breasts growth
+         y_pds_menstrual = pds_f5_y, # menstruation
+         y_pds_dpvoic = pds_m4_y, # deep voice
+         y_pds_fcHair = pds_m5_y #hair face
+         )
+
+parent_puberty = read.abcd("ABCDStudyNDA_1182451/abcd_ppdms01.txt") %>%
+  select(subjectkey,eventname,
+         p_pds_ht = pds_1_p,#height
+         p_pds_bdhair = pds_2_p,#body hair
+         p_pds_skin = pds_3_p,#changes skin
+         p_pds_fcHair = pds_m5_p, # hair face
+         p_pds_dpvoic = pds_m4_p, # deep voice
+         p_pds_brstgrw = pds_f4_p, # breast growth
+         p_pds_menstrual = pds_f5b_p #menstruate
+         )
+
+# rel_fam & race
+demograph = read.abcd("ABCDStudyNDA_1182451/acspsw03.txt") %>%
+  select(subjectkey,eventname,
+         interview_age,
+         sex,# M = Male; F = Female; O=Other; NR = Not reported
+         race_ethnicity, #1 = White; 2 = Black; 3 = Hispanic; 4 = Asian; 5 = Other
+         rel_family_id,
+         rel_relationship # 0 = single; 1 = sibling; 2 = twin; 3 = triplet
+         )
+
+
+# site id
+site = read.abcd("ABCDStudyNDA_1182451/abcd_lt01.txt") %>% 
+  select(subjectkey,eventname,
+         interview_age,
+         interview_date,
+         abcd_site = site_id_l)
+
+## BRAIN ###
+
+# GM structural
+sub_struct = read.abcd("ABCDStudyNDA_1182451/abcd_smrip201.txt") %>% 
+  select(subjectkey,eventname,
+         L_Amyg_vol = smri_vol_scs_amygdalalh, 
+         R_Amyg_vol = smri_vol_scs_amygdalarh
+         )
+
+cort_struct = read.abcd("ABCDStudyNDA_1182451/abcd_mrisdp101.txt") %>% 
+  select(subjectkey,eventname,
+         L_ACC_thic = mrisdp_6, R_ACC_thic = mrisdp_80,
+         L_ACC_area = mrisdp_308, R_ACC_area = mrisdp_382,
+         L_Cort_vol = mrisdp_602, R_Cort_vol = mrisdp_603)# fixed
+
+QC_struct = read.abcd("ABCDStudyNDA_1182451/freesqc01.txt") %>% 
+  select(subjectkey,eventname,
+         QC_T1_motion = fsqc_qu_motion, QC_T1_inhomog = fsqc_qu_inhomogeneity,
+         QC_T1_wmunder = fsqc_qu_wmunder, QC_T1_pial = fsqc_qu_wmunder, QC_T1_artifact = fsqc_qu_artifact)
+
+# WM structural
+dti_struct = read.abcd("ABCDStudyNDA_1182451/abcd_dti_p101.txt") %>% 
+  select(subjectkey,eventname,
+         L_Rost_ACC = dmri_dtifawm_cdsn_rncntelh, 
+         R_Rost_ACC = dmri_dtifawm_cdsn_rncnterh,
+         L_Caud_ACC = dmri_dtifawm_cdsn_cdancntelh,
+         R_Caud_ACC = dmri_dtifawm_cdsn_cdancnterh,
+         QC_dti_FDmot = dmri_dti_meanmotion,
+         DTI_vol_alltract = dmri_dtivol_fiberat_allfibers
+         )
+
+# Resting state
+rsfmri = read.abcd("ABCDStudyNDA_1182451/mrirscor02.txt") %>% 
+  select(subjectkey,eventname,
+         Lamyg_CingOperc = rsfmri_cor_ngd_cerc_scs_aglh,
+         Ramyg_CingOperc = rsfmri_cor_ngd_cerc_scs_agrh,
+         FDmot_FC = rsfmri_cor_ngd_scs_meanmn
+         )
+
+# Fieldmaps
+rsfm_field = read.abcd("ABCDStudyNDA_1182451/mriqcrp102.txt") %>% 
+  select(subjectkey,eventname,
+         rsfmri_fieldmap_0 = iqc_rsfmri_1_fm_wronglocus
+         )
+
+
+# Merge all above by site/id
+abcd = multi.merge(family_conflict, kiddie_parchildrela, 
+                   par_monitoring, child_accept,  child_conflict,
+                   par_inc_edu, par_psychopath, planned_pre,
+                   final_p_pubert,final_y_pubert, 
+                   youth_puberty,parent_puberty, demograph, site, 
+                   sub_struct, cort_struct,QC_struct,dti_struct,rsfm_field,rsfmri,
+                   by=mergecols)
+
+```
+
+
+Now we use the [tidyverse](https://www.rstudio.com/resources/cheatsheets/) to filter our data by baseline data in `eventname`. The release 3.0 ABCD data consists of Baseline, 6 month and 1 year data. Given that the original manuscript used the first half of Baseline and we want to use the *full baseline data* we restrict our data to baseline.
+Also, in some cases there are columns that a repeated in the .txt files which may result in repeat cases. To avoid this, we use the [duplicated](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/duplicated) command to restrict our data to `unique` subjects.
+
+```{r message=FALSE, warning=FALSE}
+abcd = abcd %>% filter(eventname == "baseline_year_1_arm_1") %>% 
+  mutate(event_name = case_when(eventname == "baseline_year_1_arm_1" ~ "Baseline"))
+
+abcd = abcd[!duplicated(abcd),] # created redundant rows, remove
+```
+
+## Export aggregated data to local 
+
+Export the aggregated `abcd` data into a .csv file using [write.csv](https://www.rdocumentation.org/packages/AlphaPart/versions/0.8.4/topics/write.csv). This cooked up data will surve as the starting point for the next phase.
+
+```{r}
+# write file
+write.csv(abcd, "./data/ABCD_cooked_2022_04_15.csv", row.names = FALSE)
+```
+

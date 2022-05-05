@@ -1,0 +1,1461 @@
+---
+title: "NeuroImage:Reports Open Data Replications"
+author: "<h3>by Michael Demidenko</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: yes
+    number_sections: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    code_folding: hide
+    self_contained: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+tags: []
+subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
+---
+# Rmd Description
+
+This is Part 4 for the project focused on the extension and multiverse analysis of a publication in Development and Psychopathology [2020](www.doi.org/10.1017/S0954579419000580)
+
+
+The sections are split across Aim 1 and Aim 2. In Aim 1 we conduct the replication analyses from the original study, which focused on the mediating role of puberty (parent report) on the direct association between the Family Environment factor (independent variable) and the brain outcomes (5 brain outcomes: Amygdala volume, ACC thickness, ACC area, and Left & Right Amyg-Cing Network resting state connectivity. Note, we do not use the sixth brain outcome, ACC FA, due to the significant change in preprocessing of DWI data between release 1 and 2). In Aim 2 we extend these results by conducting the multiverse analyses for model permutations across IV variables and the mediator, with all brain outcomes unchanged.
+
+*Note: the option for this rmarkdown is `code_folding: hide`, so the code is hidden. Please select `Code` --> `Show All Code` to unhide all code blocks. Otherwise, in each section you can simply click the `Code` button to show the respective code chunk.*
+
+
+* Useful R/Mplus links:
+    + Lavaan [cran page](https://cran.r-project.org/web/packages/lavaan/lavaan.pdf)
+    + Lavaan [syntax guide](http://www.structuralequations.com/resources/Basic_lavaan_Syntax_Guide_Aug1_2013.pdf)
+    + Lavaan [mediation](https://lavaan.ugent.be/tutorial/mediation.html)
+    + [Functions v Loops](https://erdavenport.github.io/R-ecology-lesson/03-loops-and-functions.html) in R
+
+***
+***
+
+# Packages {.tabset}
+
+
+## Required packings, install
+```{r message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(janitor, cowplot, dplyr, readr, devtools, table1, MatchIt, kableExtra, corrplot, multiplex, MplusAutomation,lavaanPlot, semPlot, lavaan, parameters, specr, MASS, Hmisc, patchwork)
+```
+
+## Load packages
+
+At each instance, load packages.
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse) # piping, descriptives, etc
+library(kableExtra) # for table formatting
+library(lavaan) # running lavaan Factor models +  mediation 
+library(lavaanPlot)
+library(parameters) # reporting lavaan parameters in table
+library(specr)
+library(cowplot)
+library(MASS)
+library(glue)
+library(corrplot)
+library(Hmisc)
+library(patchwork)
+```
+
+
+
+## Importing Final data 
+
+Here we import the data that was created during Part 2 & 3, which includes our variables and factor scores being used in the models below. 
+
+
+
+```{r message=FALSE, warning=FALSE}
+data <- read.csv("./data/ABCD_wFactorScores_2022_04_15.csv")
+```
+
+`minor correction`, the preregistration missed the step which averaged the parent/child reported PDS score & the z-scored parental income and education variable. So we create these variables below.
+
+```{r message=FALSE, warning=FALSE}
+# averaging the parent and child reported PDS scores
+data <- data %>% 
+  mutate(avg_puberty = rowMeans(dplyr::select(.,c(p_puberty,y_puberty)), 
+                             na.rm = F)) # Use F instead of T, this way NA is provided in cases of missing values on yth or par report.
+
+# z-scoring & averaging parental income and education
+data$Par_Inc_z <- scale(data$Par_Inc, center = T, scale = T)
+data$Par_Edu_z <- scale(data$Par_Edu, center = T, scale = T)
+
+data <- data %>% 
+  mutate(Avg_IncomeEduc = rowMeans(dplyr::select(.,c(Par_Inc_z,Par_Edu_z)), 
+                             na.rm = F))
+```
+
+
+Let's also rename the variables that we use so they are easily interpretable and easier to use the numerical values the models below.
+
+```{r message=FALSE, warning=FALSE}
+
+data <- data %>% 
+  rename(
+      # IV: renaming our factor scores
+      FamEnv_Fact = FamEnv_Score_r, Demo_Fact = Demo_Score_r,
+      Par_Fact = Par_Score_r, Child_Fact = Child_Score,
+      # IV: renaming variables
+      FES_youth = FES_y_mean, CRPBI = CRPBI_mean, PMON = PMON_y_mean,
+      FES_parent = FES_p_mean,
+      # outcome brain
+      Amygdala_vol = Amyg_Vol_z, ACC_CA = ACC_Area_z, 
+      ACC_CT = ACC_Thick_z, 
+      L_AmygCing_rest = Lamyg_CingOperc, R_AmygCing_rest = Ramyg_CingOperc,
+      # covariates
+      
+      )
+
+data = data %>% 
+  mutate(race_r = case_when(race == 'White' ~ 1,
+                          race == 'Black' ~ 2,
+                          race == 'Hispanic' ~ 3,
+                          race == 'Asian' ~ 4,
+                          race == 'Other' ~ 5),
+         sex_r = case_when(sex == 'F' ~ 0,
+                           sex == 'M' ~ 1)
+         )
+```
+
+Consistent with the preregistered [table 1](https://github.com/demidenm/ABCD_EnvBrainPubert_ReplicateExtend/blob/main/Stage1_Preregistration/Manuscript/ReplicationMultiverse_STAGE1_preregistration.pdf) the variables and their associated variable names that we will focus on for the replication^ and multiverse analyses are as follows
+
+**Indepdendent variables (IV)**
+
+* Family Environment Factor: FamEnv_Fact^
+* Demographic Factor: Demo_Fact
+* Child  Factor: Child_Fact
+* Parent Factor: Par_Fact
+* FES Youth: FES_youth
+* FES Parent: FES_parent
+* Parental Monitoring: PMON
+* Parental Acceptance: CRPBI
+* z-scored Parental Income/Education: Avg_IncomeEduc
+
+**Mediating Variables (M)**
+
+* Par Reported PDS: p_puberty^
+* Yth reported PDS: y_puberty
+* Averaged Par/Yth PDS: avg_puberty
+
+**Outcome Variables (DV)**
+
+* Bilat. Amygdala SV: Amygdala_vol^
+* Bilat. ACC CT: ACC_CT^
+* Bilat. ACC CA: ACC_CA^
+* Left Amygdala-CON rsfMRI: L_AmygCing_rest^
+* Right Amygdala-CON rsfMRI: R_AmygCing_rest^
+
+**Covariates in all models**
+
+* Age: Age
+* Race/Ethnicity: race_r
+* Sex: sex_r
+
+
+For purposes of coherence in abbreviations as we report in the manuscripte, we removed underscores (e.g., FamEnv_Fact --> FamEnv Fact) and renamed some variables as follows.
+FES_youth = FES Yth; FES_parent = FES Par; CRPBI = Par Accept; Avg IncomeEduc = Avg IncEdu; p_puberty = PDS Par; y_puberty = PDS Par; avg_puberty = PDS ParYth; L/R AmygCing_rest = L/R AmygCON.
+
+# Multiverse Function {.tabset}
+
+Here we define our multiverse function, where model inputs include:
+
+* List of IVs (X)
+* List of DVs (Y)
+* List of Mediators (M)
+* List of covariates (Cov)
+* Specified lavaan model
+* Aim 1: this can be used for our Five* model replication, as we run `five` models
+  - Fam | PDS Par | Amygdala Vol
+  - Fam | PDS Par | ACC CT
+  - Fam | PDS Par | ACC CA
+  - Fam | PDS Par | L Amyg ~ CON FC
+  - Fam | Par Puberty | R Amyg ~ CON FC
+  
+ *`Note:` Fam | Par Puberty | ACC FA we do not include the FA measure given the changes in preprocessing for DWI data between the releases which impacted the underlying estimates of FA.
+
+* Aim 2: this is particularly useful for our 100+ multiverse estimate
+
+## Function code
+
+Some helpful notes regarding this function. There are three steps. The function requires input of: `X` = list of independent variables, `Y` = list of dependent variables, `M` = list of mediators, `Cov` = list of covariates (note, for this project we do not have a list, but in stead use constants of Age, Race, Sex), `df` A datamrame that contains our variables (columes) and participants (rows), `lavaan_model` = this is the syntax specifying the mediation model, `model_boot` = the number of bootstraps to run in the mediation model that calculates significance for our effects.
+
+1. Step 1 simply takes in the X, Y, M list + Cov1, Cov2, Cov2 constants and creates the permutation of variable combinations. This is simply the product of the list of items in X, Y, M, Covs. It calculates this product and spits out the combinations used. 
+
+2. In step 2 we use [apply()](https://www.geeksforgeeks.org/apply-function-to-each-row-in-r-dataframe/) to each row to run all variable permutations (matrix rows) for our lavaan::sem() model. The apply function takes each row of variables (stored in `var_perumtations`), sends them into the function variable `combos`, subsets our `df` by these variables and creates these column names w/ that data. On this data, lavaan function is used to fit the specified model. The mediation model uses the permutations of X, Y, M + constant covariates. 
+
+3. After Step 2 is complete, we will get a list of `total permutations` saved to the `data_rep`. We can access the model, variable and fit statistics via different ways. Here, we use lappy() to loop through this list, and send each instance to function(x) where x is each iteration of output in `data_rep`. We use the `parameters` package to save the standardized model parameters to a data.frame, and we save the variable names for each model Using the location of each variable and parameter name and estimate value, we extract this estimate and save it to a data.frame. The variables that are relevant here are:
+
+    * Model's variables permutations across: X, Y, M
+    * Number of observations for the model
+    * Number of parameters fit for the model
+    * The effect, e.g., A, B, Direct, Indirect & total effect paths
+    * Beta estimate, associatied 95% CI, conf.high, conf.low, and the p.value
+
+We combine across rows to get these values in a signal dataframe, then relabel the column names so we have the output structure that is comparable to the specr() output style to use w/ plot_spercs() function(s).
+
+*in the pre-registered code there was an error in which estimates were extract. In the pre-registration model_parameters(fit, standardize = `FALSE`) when it should have been model_parameters(fit, standardize = `TRUE`)*
+```{r}
+
+mediation_specr <- function(X, Y, M, Cov1, Cov2, Cov3, df, lavaan_model, model_boot) {
+
+## Step 1
+  # Creating variable permutations for lists in X, Y, M, Cov
+var_permutations <- as.matrix(expand.grid(X = X, 
+                                          Y = Y, 
+                                          M = M, 
+                                          Age = Cov1,
+                                          Race = Cov2,
+                                          Sex = Cov3))
+
+# Check the number of permutations that are created basic ont he input strings
+total_permutes <- length(X)*length(Y)*length(M)*length(Cov1)*length(Cov2)*length(Cov3)
+print(paste0("Total Permutations for Current Mediation Models: ", total_permutes))
+
+
+# Step 2
+# Create data.frame of output using model pre
+##  the var_permutations are run across the matrics into the function.
+
+
+data_rep <- 
+  apply(X = var_permutations, MARGIN = 1, function (combos) {
+    require(lavaan)
+    permuted.df <- df[combos] # pull data that only has variables we're interested in
+    
+    # selection variable names to replace in model_fit()
+    X = as.character(combos[1]) 
+    Y = as.character(combos[2])
+    M = as.character(combos[3])
+    Age = as.character(combos[4])
+    Race = as.character(combos[5])
+    Sex = as.character(combos[6])
+    
+    # we use "glue()" here in the model sytnax to example {variables} with the values assigned above. 
+    mediation_model <- glue('
+    # Direct Effect (X->Y), c - path
+    {Y} ~ c*{X} + {Age} + {Race} + {Sex}
+    
+    # Meidation (X -> M), a path
+    {M} ~ a*{X} + {Age} + {Race} + {Sex}
+    
+    # Mediation (M -> Y), b path 
+    {Y} ~ b*{M} 
+    
+    # Indirect Effect (a*b)
+    ind := a*b
+    
+    # Total Effect
+    total := c + (a*b)
+    ')
+    
+    # Herre we run and save the model parameters to "fit"
+    fit <-lavaan::sem(model = mediation_model, 
+                      data = permuted.df,
+                      se = "bootstrap",
+                      bootstrap = model_boot, 
+                      mimic = "Mplus"
+                      )
+
+# Step 2
+# Extra the variables we will be using in subsequent steps
+require(parameters)
+
+model_out = data.frame(model_parameters(fit, standardize = TRUE)) 
+med_vars = lavNames(fit)
+spec_data <- data.frame("X"  = as.character(med_vars[3]), 
+                       "Y" = as.character(med_vars[1]), 
+                       "M" = as.character(med_vars[2]), 
+              "Direct_estimate" = model_out[1,4], "Direct_std.error" = model_out[1,5],
+              "Direct_conf.low" = model_out[1,6],  "Direct_conf.high" = model_out[1,7], 
+              "Direct_p.value" = model_out[1,9],
+           
+              "Apath_estimate" = model_out[5,4], "Apath_std.error" = model_out[5,5],
+              "Apath_conf.low" = model_out[5,6],  "Apath_conf.high" = model_out[5,7], 
+              "Apath_p.value" = model_out[5,9],
+              "Bpath_estimate" = model_out[9,4], "Bpath_std.error" = model_out[9,5],
+              "Bpath_conf.low" = model_out[9,6],  "Bpath_conf.high" = model_out[9,7],
+              "Bpath_p.value" = model_out[9,9],
+           
+              "Indirect_estimate" = model_out[16,4], "Indirect_std.error" = model_out[16,5],
+              "Indirect_conf.low" = model_out[16,6],  "Indirect_conf.high" = model_out[16,7], 
+              "Indirect_p.value" = model_out[16,9],
+              
+              "Total_estimate" = model_out[17,4], "Total_std.error" = model_out[17,5],
+              "Total_conf.low" = model_out[17,6],  "Total_conf.high" = model_out[17,7], 
+              "Total_p.value" = model_out[17,9]) 
+  # add model observations & parameters N
+  spec_data$Observations = fitMeasures(fit)[21]; spec_data$N_Parameters = fitMeasures(fit)[1]
+  
+  return(spec_data)
+}) %>% 
+  bind_rows() %>%  # combined by rows the lists from lapply
+  gather(key = "Effect", value = "Coefficient", Direct_estimate:Total_p.value) %>% # we take all colum names Direct:Total_p and save the variable names, i.e., Direct, to the key "Effect" and the value to "Coefficient"
+  separate(col = "Effect", into = c("Effect","Type"), sep = "_", extra = "merge", fill = "right") %>% # because we want to combine this data to similar format as we safe our thijseen file, we want to separate all variables with '_', that way the first value 'Direct' or 'Apath' is in "Effect" and the type of value, i.e., SE or lower CI, is in 'Type' column. We fill these to the right
+  spread(key = "Type", value = "Coefficient") # now that we have the type column, we spread this data out from long to wide
+  
+
+}
+
+```
+
+
+
+# Aim 1 {.tabset}
+
+## Thijssen et al effects
+
+We extract the Betas and Standard errors from the original [paper](www.doi.org/10.1017/S0954579419000580) (i..e, Figure 1, Table 4 - 6), and calculate the 95% CI for the Direct Effect, A path, B path using `Beta +/- 1.96 * SE`. We save these in a `.csv` file to use in comparisons here. Given that there was not sufficient information to calculate these metrics based on information provided in the original paper, Dr. Thijssen provided the SE/95% CI values for total & indirect effects.
+
+*Of note*: In the original pre-registration, we had a typo in the effect preregistered for the R/L Amyg CON indirect effect which didn't reflect of those in [Thijssen et al. 2021 reanalysis post philips scanner reported error by consortium](http://www.cambridge.org/core/journals/development-and-psychopathology/article/pubertal-development-mediates-the-association-between-family-environment-and-brain-structure-and-function-in-childhood-addendum/07AB8CD58B9C2576EAB9FA05132AAD58), whereby we pre-registered an effect that was not the one the authors re-analyzed in their data after excluding later reported issue with philips scanner's preprocessing. This did not change any subsequent inferences here.
+
+```{r}
+Thij_eff <- read.csv("./Thijssenetal_Effects.csv") %>% 
+  rename("estimate" = Beta, "std.error" = SE, 
+         "conf.low" = lower_95CI, "conf.high" = upper_95CI, 
+         "p.value" = pval) 
+
+
+# Remove the ACC_FA, as we are not using this in replication
+Thij_eff <- Thij_eff %>% 
+  filter(Brain != "ACC FA")
+```
+
+
+Here we plot the Beta estimates and any associated 95% Confidence Interval for each path type: a path, b path, indirect (a*b), direct (c`) and total (c) across the five brain DVs.
+
+```{r}
+
+color_1 <- cbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2")# six colours for six factors
+
+Thij_eff %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  labs(y = "Beta Estimates") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+
+Thij_eff %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  labs(y = "Beta Estimates") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+```
+
+## Replication Mediation
+
+We use the same mediation model syntax as specified above.
+
+Create combinations and run models combinations for IV, Mediation or Brain DVs to run 5 mediation. Here, we are running the variables for the replication:
+
+IV: FamEnv_Fact, 
+Meditor: p_puberty, 
+DVs: Amygdala_vol, ACC_CT, ACC_CA, L_AmygCing_rest, R_AmygCing_rest
+
+ 
+```{r echo=TRUE}
+# list variables for mediation
+Rep_iv = c("FamEnv_Fact")
+Rep_dv = c("Amygdala_vol","ACC_CT","ACC_CA","L_AmygCing_rest","R_AmygCing_rest")
+Rep_m = c("p_puberty")
+
+# Future users, if permuting across covariates, uncomment below & update input/model code above
+#Rep_cov = c("Age")
+```
+
+Running the model. After the initial instance of running this model, we save the table output and do not run it next time. WIthout using the parallelized version of the multiverse function written above (which uses lapply), the duration of running this model on a macOS Monterey, 2.3GHz 8-code i9, 16GB ram is 36 minutes.
+```{r eval=FALSE, include=FALSE}
+set.seed(1989)
+
+
+mediation_replicate <- mediation_specr(X = Rep_iv, Y = Rep_dv, M = Rep_m, 
+                                       Cov1="Age",Cov2 ="race_r",Cov3 ="sex_r",
+                                       df = data, 
+                                       lavaan_model = mediation_model, 
+                                       model_boot = 5000)
+
+file_name_rep <- paste0("./Output/MedReplicate_Table_",format(Sys.time(), '%B_%Y'),".csv")
+
+write.csv(x = mediation_replicate,
+          file = file_name_rep,
+          row.names = F)
+```
+
+
+The code here below used to confirm initial instances of the mediation model, to ensure the models 1) run without major errors, 2) appropriate data is extracted and 3) no egregrious problems arise.
+
+```{r eval=FALSE, include=FALSE}
+library(lavaan)
+test <- '
+# Direct Effect (X->Y), c - path
+Amygdala_vol ~ c*FamEnv_Fact + Age + race_r + sex_r
+    
+# Meidation (X -> M), a path
+p_puberty ~ a*FamEnv_Fact + Age + race_r + sex_r
+    
+# Mediation (M -> Y), b path 
+Amygdala_vol ~ b*p_puberty 
+    
+# Indirect Effect (a*b)
+ind := a*b
+    
+# Total Effect
+total := c + (a*b)
+'
+    
+    # Herre we run and save the model parameters to "fit"
+    fit <-lavaan::sem(model = test, 
+                      data = data,
+                      se = "bootstrap",
+                      bootstrap = 500, 
+                      mimic = "Mplus"
+                      )
+    model_parameters(fit)
+```
+
+After the initial instance, the R code to run this model is not ran. Instead, after running the model the first time, we save the table with the estimates and load them back into Rstudio to use in subsequent steps. This is to save on machine resources/time and to increase efficiency in knitting the final version of the .html document.
+
+
+
+Here we write the `extract_mediate` function.  First, we pull the associated X, Y, M variable names to replace the model values with our variable names for the plots. Using the data pulled by `model_parameters`, we pull the associated [row,column] from the model_parameters() output for the model. Here we focus on the Direct, Indirect, Total, Apath, and Bpath, extracting the beta, standard error, association upper/lower bound 95% CI, and p-value  
+
+
+
+
+### Parameters Output
+
+In the function we defined, `mediation_specr', we model these parameters using [lapply](https://www.guru99.com/r-apply-sapply-tapply.html). This simply  a function that can work across lists that we created -- think of it as cleaner version of a [for loop](https://www.datamentor.io/r-programming/for-loop/). We combined the extracted values across rows (bind_rows), then, we use a combination of [gather, separate and spread](https://uc-r.github.io/tidyr) to get ou data frame in the manner we want.
+
+
+
+
+```{r}
+# load the prev. data
+mediation_replicate <- read.csv("./Output/MedReplicate_Table_April_2022_renamed.csv")
+
+# summarize the data
+
+mediation_replicate %>% 
+  kbl(digits = 4, booktabs = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+```
+
+
+## Compare: Orig. v Replication
+
+First, we pull Brain variable and indirect/direct/total/apath/bpath betas and associated p.values from our replication model for the 5 DVs
+
+```{r}
+replication_to_compare <- mediation_replicate %>% 
+  dplyr::select(Y, Effect, estimate, p.value, conf.high, conf.low) %>% 
+  rename("Brain" = Y) 
+```
+
+For the conceptual replication, we proposed to check several things:
+
+1. Whether the estimates in the replication study are in the same direction as the original
+2. Whether the estimates in the replication study are significant as in the original
+3. Whether the estimates in the replication study overlap with the 95% CI from the original study for that estimate. For this, we do the reverse, too, plot and obverse whether the original betas overlation with the replication betas +/- 95% CI.
+
+
+### Plotting Original/Replicated Estimates
+
+First, we provide a visual representation of item 1 - 3 noted above. We overlay the original study beta estimates + 95% CI and the replication model beta estimates for each mediation path across `[5]` brain DVs mediation models. The original beta estimate is a colored circle (differentiated by path) and the replicated estimate is a colored 'X' associated with a similar color for each mediation path and brain DV. 
+
+We focus on the 95% CI due to the fact that across all random samples for the size of this data, 95% of those samples will have a 95% confidence interval that will contain the estimated value that represents the data with similar characteristics. In other words, if we sampled 100 participants, got our means and SD and we were to repeatedly sample based on the sample size, mean, and SD we would get an estimate with a lower and upper bound, or our 95% CI. 
+
+```{r}
+color_1 <- cbPalette <- c("black", "chocolate1", "firebrick", "slateblue", "turquoise4")# six colours for six factors
+
+#jpeg("Figures/Aim1/ReplicBeta_v_Orig95ci.jpeg", units = "in",
+#     width = 8, height = 5, res = 300)
+
+Thij_eff %>% 
+  #filter(!Effect == "Total") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  geom_point(data = replication_to_compare, aes(x = Brain, y = estimate, colour = Brain), 
+             shape = 4, position = "jitter") +
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "o = β From Thijssen et al. \n x: β From Replication"
+       ) +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+#dev.off()
+
+sub_effects_a <- Thij_eff %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 21) +
+  geom_point(data = replication_to_compare %>% filter(Effect == "Direct" | Effect == "Indirect"), aes(x = Brain, y = estimate, colour = Brain), 
+             shape = 4, position = "jitter") +
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "o = β From Thijssen et al. \n x: β From Replication"
+       ) +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank(),
+        legend.position = "none")
+
+
+```
+
+
+Here, we plot the **inverse of the above**. Above we visualized the beta estimates & `95% CI from the original study` and how the replicated beta estimates overlapped with this. Here, we visualize the `replicated beta estimates & their associated 95%` and see how the original beta estimates replicate with them.
+
+```{r}
+color_1 <- cbPalette <- c("black", "chocolate1", "firebrick", "slateblue", "turquoise4")# six colours for six factors
+
+#jpeg("Figures/Aim1/OrigBeta_v_Repl95ci.jpeg", units = "in",
+#     width = 8, height = 5, res = 300)
+
+replication_to_compare %>% 
+  #filter(!Effect == "Total") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 4) +
+  geom_point(data = Thij_eff, aes(x = Brain, y = estimate, colour = Brain), 
+             shape = 21, position = "jitter") +
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+  #     caption = "o = β From Thijssen et al. \n x: β From Replication"
+       ) +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+#dev.off()
+
+
+sub_effects_b <- replication_to_compare %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(x = Brain, y = estimate, colour = Brain)) +
+  #geom_errorbar(aes(ymin=len-ci, ymax=len+ci), colour="black", width=.1, position=pd) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high, colour = Brain), 
+                 width = .1, alpha = .5) +
+  geom_point(fill = "white", shape = 4) +
+  geom_point(data = Thij_eff %>% filter(Effect == "Direct" | Effect == "Indirect"), 
+             aes(x = Brain, y = estimate, colour = Brain), 
+             shape = 21, position = "jitter") +
+  labs(y = "", 
+       colour = "Brain Outcome") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+
+#jpeg("Figures/Aim1/Combined_DirInd_plt.jpeg", units = "in",
+#     width = 8, height = 5, res = 300)
+
+#sub_effects_a / sub_effects_b + plot_layout(guides = 'collect')
+
+cowplot::plot_grid(sub_effects_a, sub_effects_b, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 1),
+                   label_fontfamily = "Times", label_size = 14)
+#dev.off()
+```
+
+To understand the confidence intervals a bit better, here we plot the distributions of the 5 brain outcomes. This may help inform why the confidence intervals are wider for some brain, such as ACC CA/CT and volumen, but not others, such as the L/R amygdala & CING connectivity. We plot this in two different ways, where the y-scale is `fixed` across all of the variables and where the y-scale is `free` to vary across the brain types.
+
+```{r message=FALSE, warning=FALSE}
+data %>% 
+  pivot_longer(c(Amygdala_vol,ACC_CT,ACC_CA,
+                 L_AmygCing_rest,R_AmygCing_rest), 
+  names_to = "Brain_ROI", values_to = "Values") %>% 
+  ggplot(aes(x = Values)) +
+  geom_density() +
+  facet_wrap(vars(Brain_ROI), ncol = 3) +
+  labs(title = "Fixed scale", x = "Brain ROI", y = "Value Distributions", 
+       caption = "vol = volume; ACC = Anterior Cingulate Cortex; CT = cortical thickness; /n 
+       CA = cortical area; L = Left, R = Right; AmygCing_rest = Amygdala-CON rsfMRI") +
+  theme_minimal()
+
+
+data %>% 
+  pivot_longer(c(Amygdala_vol,ACC_CT,ACC_CA,
+                 L_AmygCing_rest,R_AmygCing_rest), 
+  names_to = "Brain_ROI", values_to = "Values") %>% 
+  ggplot(aes(x = Values)) +
+  geom_density() +
+  facet_wrap(vars(Brain_ROI), ncol = 3, scales = "free") +
+  labs(title = "Free scale", x = "Brain ROI", y = "Value Distributions", 
+       caption = "vol = volume; ACC = Anterior Cingulate Cortex; CT = cortical thickness; /n 
+       CA = cortical area; L = Left, R = Right; AmygCing_rest = Amygdala-CON rsfMRI") +
+  theme_minimal()
+```
+
+
+### Calculating overlap btwn Original/Replicated Estimates
+
+Here, we generate some estimates to determine p-value (i.e.,  p < .001, < .01, < .05) threshold for each estimate using [case_when](https://www.sharpsightlabs.com/blog/case-when-r/). Then, we ask a True (1)/False(0) statement using [if_else](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/ifelse) within [mutate](https://dplyr.tidyverse.org/reference/mutate.html) to determine whether 1) the sign of the effect (+/-) is in the same direction using the [sign](https://statisticsglobe.com/sign-function-in-r/) function, 2) the effect from replicated data found between 95% CI in original study and 2) that the original p-value category (i.e., p  > 05 or p < .05) is similar across the two. Before we do this, we combine the original data output (dataframe(Thij_eff) and the replicated data (data.frame(replication_to_compare)) by the "brain" and the "effect" overlap. We provide the suffix "_OG" for the original coefficients and "_Rep" for the replication. 
+
+
+
+```{r}
+
+combined_OG_Rep <-left_join(Thij_eff, replication_to_compare, 
+          by = c("Brain","Effect"),
+          suffix = c("_OG","_Rep"))
+
+combined_OG_Rep <- combined_OG_Rep %>% 
+  mutate(pval_Rep = case_when(p.value_Rep < .05 ~ "< .05",
+                               TRUE ~ "> .05")) %>% 
+  mutate(RepB_BtwnOrig_95CI = 
+           if_else(estimate_Rep < conf.high_OG & conf.low_OG < estimate_Rep,1,0), 
+         OrigB_BtwnRep_95CI = 
+           if_else(estimate_OG < conf.high_Rep & conf.low_Rep < estimate_OG,1,0),
+         same_p_cat = if_else(p.value_OG == pval_Rep,1,0),
+         same_sign = if_else(sign(estimate_Rep) == sign(estimate_OG), 1, 0)
+  )
+
+write.csv(x = combined_OG_Rep, file = "./Output/Effect_OGRep_Overlap.csv", row.names = F)
+
+```
+
+
+Now that we have generated our variables, we can quantify the % of which overlap by using the mean() within the summarize() wrap. Given that our values are 1/0, using the mean works, given that we add/divide.
+
+
+For all parameter estimates (total, direct, indirect, a/b path)
+```{r}
+combined_OG_Rep %>% 
+  dplyr::summarize('RepBeta_btwn_95CI_OfOrig' = mean(RepB_BtwnOrig_95CI, na.rm = T),
+            'OrigBeta_btwn_95CI_OfRep' = mean(OrigB_BtwnRep_95CI, na.rm = T),
+            'RepP_SameCategory_AsOrig' = mean(same_p_cat, na.rm = T),
+            'RepBetaSign_SameDir_AsOrig' = mean(same_sign, na.rm = T),)
+
+
+#jpeg("Figures/Aim1/RepOrigOverlap_Barplot.jpeg", units = "in",
+#     width = 10, height = 5, res = 300)
+
+combined_OG_Rep %>% 
+  dplyr::summarize('RepBeta_btwn_95CI_OfOrig' = mean(RepB_BtwnOrig_95CI, na.rm = T),
+            'OrigBeta_btwn_95CI_OfRep' = mean(OrigB_BtwnRep_95CI, na.rm = T),
+            'RepP_SameCategory_AsOrig' = mean(same_p_cat, na.rm = T),
+            'RepBetaSign_SameDir_AsOrig' = mean(same_sign, na.rm = T)) %>% 
+  gather(., key = X, value = Y, RepBeta_btwn_95CI_OfOrig,OrigBeta_btwn_95CI_OfRep,
+         RepP_SameCategory_AsOrig, RepBetaSign_SameDir_AsOrig) %>% 
+  ggplot(aes(x = X, y = Y, fill = X)) +
+  geom_bar(stat = "identity") +
+  labs(col = "Replicated Estimates")+
+  ylim(c(0.0,1.0))+
+  ylab("Percentage") +
+  xlab("")+
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), legend.title = element_blank(), 
+        legend.position = "bottom")+
+  scale_fill_manual(values=c("#999999", "coral2", "#E69F00", "#56B4E9"),
+                    labels = c(
+                               "Original β Between \n95% CI for Replication β",
+                               "Replication β Between \n95% CI around Original β",
+                               "Replication β Sign Same \nDirection As Original β",
+                               "Replication p-val Same \nCategory as Original p-val"))
+
+#dev.off()
+```
+
+
+For Indirect and Direct paths only, as preregistered for Aim 1
+```{r}
+
+combined_OG_Rep %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>%
+  dplyr::summarize('RepBeta_btwn_95CI_OfOrig' = mean(RepB_BtwnOrig_95CI, na.rm = T),
+            'OrigBeta_btwn_95CI_OfRep' = mean(OrigB_BtwnRep_95CI, na.rm = T),
+            'RepP_SameCategory_AsOrig' = mean(same_p_cat, na.rm = T),
+            'RepBetaSign_SameDir_AsOrig' = mean(same_sign, na.rm = T),)
+
+#jpeg("Figures/Aim1/RepOrigOverlap_Barplot_DirIndOnly.jpeg", units = "in",
+ #    width = 10, height = 5, res = 300)
+
+combined_OG_Rep %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  dplyr::summarize('RepBeta_btwn_95CI_OfOrig' = mean(RepB_BtwnOrig_95CI, na.rm = T),
+            'OrigBeta_btwn_95CI_OfRep' = mean(OrigB_BtwnRep_95CI, na.rm = T),
+            'RepP_SameCategory_AsOrig' = mean(same_p_cat, na.rm = T),
+            'RepBetaSign_SameDir_AsOrig' = mean(same_sign, na.rm = T)) %>% 
+  gather(., key = X, value = Y, RepBeta_btwn_95CI_OfOrig,OrigBeta_btwn_95CI_OfRep,
+         RepP_SameCategory_AsOrig, RepBetaSign_SameDir_AsOrig) %>% 
+  ggplot(aes(x = X, y = Y, fill = X)) +
+  geom_bar(stat = "identity") +
+  labs(col = "Replicated Estimates")+
+  ylim(c(0.0,1.0))+
+  ylab("Percentage") +
+  xlab("")+
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), legend.title = element_blank(), 
+        legend.position = "bottom")+
+  scale_fill_manual(values=c("#999999", "coral2", "#E69F00", "#56B4E9"),
+                    labels = c(
+                               "Original β Between \n95% CI for Replication β",
+                               "Replication β Between \n95% CI around Original β",
+                               "Replication β Sign Same \nDirection As Original β",
+                               "Replication p-val Same \nCategory as Original p-val"))
+
+#dev.off()
+```
+
+
+
+## Subjective Eval Replication
+
+Here we randomly select 5 co-authors out of a list of 8 to *subjectively* evaluate the replication of the effects. As preregistered, we do not include original authors in this list.
+
+First, we randomly generate a seed between 1 and 1000, and then randomly sample 5 names from a list of 8, without replacement. We randomize the seed so the resulting values are truly random. Otherwise, by having a list of 8 values we would know prospectively which 8 would be selected based for a set.seed of say, 100.
+
+Note, after the initial run, to avoid bias this code is not rerun. Thus, a single file is generated. The initial code was ran one day after the preregistration: `February 19th, 2022, 9:45AM PST`.
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+author_list = c("Author1", "Author2", "Author3","Author4","Author5",
+                "Author6", "Author7", "Author10")
+
+
+# (1) Demidenko, (2) Kelly, (3) Hardi, (4) Ip, (5) Lee, (6) Hong, (7) Becker, (8) Thijssen*, (9) Luciana*, (10) Keating
+# *Original authors
+
+seed_n = round(runif(1, min = 1, max = 1000),0) # round to whole number
+set.seed(seed_n)
+
+Reviewers = sample(x = author_list, size = 5, replace = FALSE)
+
+print(paste0(Reviewers))
+
+
+write.table(Reviewers, file = "./Authors_ReviewingReplication.txt", col.names = FALSE, row.names = FALSE, sep = "\t")
+```
+
+
+# Aim 2 {.tabset}
+
+## Creating list of variables
+
+Here we create a list of variables that we will be using. For example, we are running models across different combinations of IV, DV, and Mediators. We add these to a list.
+In our function, we use `exapnd.grid` to create all permutations for our "X", "Y" and "M" columns that'll be used in the mediation model. We save this as as a matrix.
+
+
+```{r}
+# list variables for mediation
+IVs = c("FamEnv_Fact","Demo_Fact","Child_Fact","Par_Fact",
+       "FES_youth","FES_parent",
+       "PMON","CRPBI","Avg_IncomeEduc")
+
+M = c("p_puberty","y_puberty","avg_puberty")
+
+DVs = c("Amygdala_vol","ACC_CT","ACC_CA","L_AmygCing_rest","R_AmygCing_rest")
+
+```
+
+
+***
+***
+
+## Mediation model
+
+In the real models we will fit a mediation model degenerated from Steps 1 - 3. This, of course, would be expanded by including the brain variables. The goal would be to create a loop/function that will run the mediation with each version of:
+
+**Family**
+
+* Overall factor (Family Environment).
+* Sub factor A (Child)
+* Sub factor B (Parent)
+* Sub factor C (Demographic)
+* Scale level (e.g., monitoring, acceptance, etc)
+
+**Puberty**
+
+* Child SR
+* Parent SR
+
+**Brain**
+
+* Using similar brain outcomes as original paper, using 5 of the 6 brain outcomes, given DWI sig. preprocessing changes between release 1 & 2
+
+
+While for the real analyses we will use the variables from the original data, here we will focus on our simulated variables. So the mediation model will be comprised using these fake variables.
+
+
+## Run mediation models
+
+Here we take the permutations of our X, Y, M variables, combined it with apply() to run a quick function that will run our mediation models using lavaan. For specifics related to this function, revisit `Multiverse Function` above
+
+
+Running the multivers model. After the initial instance of running this model, we save the table output and do not run it subsequent times R is restarted. Without using the parallelized version of the multiverse function written above (which uses lapply), the duration of running this model on a macOS Monterey, 2.3GHz 8-code i9, 16GB ram is ~ 16hrs.
+```{r eval=FALSE, warning=FALSE, include=FALSE}
+set.seed(1989)
+  start_time <- Sys.time() # start timer
+
+# setup mediation model
+mediation_multiverse <- mediation_specr(X = IVs, Y = DVs, M = M, 
+                                       Cov1="Age",Cov2 ="race_r",Cov3 ="sex_r",
+                                       df = data, 
+                                       lavaan_model = mediation_model, 
+                                       model_boot = 5000)
+
+  end_time <- Sys.time() # end time
+  round(end_time - start_time) # print time to run
+
+# create file name to save
+file_name_multiverse <- paste0("./Output/Multiverse_Table_",format(Sys.time(), '%B_%Y'),".csv")
+
+# save data frame to use in subsequent steps
+write.csv(x = mediation_multiverse,
+          file = file_name_multiverse,
+          row.names = F)
+```
+
+## Estimates
+
+here we extract and review the variables in the model + standardized parameters, standard error, 95% CI (lb/ub) and p-value. 
+
+Below we can visualize this complete set out coefficients for our models. This output is associated with the **length N = `r length(IVs)*length(DVs)*length(M)`**  models that we were intending to get. This is product for X, M, Y. 
+
+```{r message=FALSE, warning=FALSE}
+# Load in multiverse tables
+mediation_multiverse <- read.csv("./Output/Multiverse_Table_April_2022.csv") 
+
+mediation_multiverse %>% 
+  kbl(digits = 4, booktabs = TRUE) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+```
+
+As we see, the table length for a single path type, such as *Direct effect*, is **`r mediation_multiverse %>% filter(Effect == "Direct") %>% nrow()`**.
+
+
+## Specr Plots
+
+For these plots, as is used in prior work, we report the ordered effects across out multiverse of indirect, direct and total effects. There are some additional inferential procedures we can consider, see [Dani Cosme's Documentation example ](https://dcosme.github.io/specification-curves/SCA_tutorial_inferential). However, these bootstrapped estimates are typically done for simple X~Y models and would require tailoring for the mediation. Some other representations for specr models: 
+
+* Recent mediation with specr that we used for inspiration [2021](www.doi.org/10.1007/s11121-021-01280-1)
+* Specr with[lavaan](https://masurp.github.io/specr/articles/measurement_models.html)
+* Spec curve analysis [published](https://journals.sagepub.com/doi/10.1177/0956797619830329) and [OSF code](https://osf.io/rkb96/) and [2019](https://www.nature.com/articles/s41562-018-0506-1)
+* Simonsohn, Simmons, & Nelson [2015](https://sticerd.lse.ac.uk/seminarpapers/psyc16022016.pdf) and [2020](https://www.nature.com/articles/s41562-020-0912-z), and 
+[Steegen et al., 2016](https://journals.sagepub.com/doi/10.1177/1745691616658637)
+
+Of note, while there are no significant effects here (conf.high/conf/low overlap with 0), these plots will color points blue/red for p < .05 for post/neg effects.
+
+**How to interpret the specification curve plots?** The multi-panel figures represent the effect size and significance in `Panel A` and the variables (significance denoted blue/red and null denoted gray) used in the models in `Panel B`. The interpretation of these panels are straightforward, the significant negative effect (red) in panel B, will have an associated X (predictor), M (mediator) and Y (outcome) denoted in red that was fit for that model. All of these models also controlled for age, sex, and race.
+
+Like in [Rinjhart 2021](www.doi.org/10.1007/s11121-021-01280-1), we create a specification curve figures for the (1) Direct effect, (2) Indirect effect and (3) Total effect. For each figure, the effects are ordered, from least to greatist, thus, the order of variables/effects across these three figures will not always overlap. 
+
+### Direct Effect
+
+```{r}
+specr_direct <- mediation_multiverse %>% 
+  filter(Effect == "Direct")
+specr_direct$controls <- "Age + Race + Sex"
+
+
+plot_a <- plot_curve(df = specr_direct, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
+
+plot_b <- plot_choices(df = specr_direct, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Direct Effect")
+
+jpeg("Figures/Aim2/DirectEffect_Multiverse.jpeg", units = "in",
+     width = 10, height = 5, res = 300)
+
+cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 2),
+                   label_fontfamily = "Times", label_size = 12)
+
+dev.off()
+
+```
+
+
+### Indirect Effect
+
+```{r}
+specr_indirect <- mediation_multiverse %>% 
+  filter(Effect == "Indirect")
+specr_indirect$controls <- "Age + Race + Sex"
+
+plot_a_ind <- plot_curve(df = specr_indirect, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
+
+plot_b_ind <- plot_choices(df = specr_indirect, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Indirect Effect")
+
+
+jpeg("Figures/Aim2/IndirectEffect_Multiverse.jpeg", units = "in",
+    width = 10, height = 5, res = 300)
+
+cowplot::plot_grid(plot_a_ind, plot_b_ind, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 2),
+                   label_fontfamily = "Times", label_size = 12)
+
+dev.off()
+```
+
+
+### Total Effect
+
+```{r}
+specr_total <- mediation_multiverse %>% 
+  filter(Effect == "Total")
+
+specr_total$controls <- "Age + Race + Sex"
+
+plot_a_tot <- plot_curve(df = specr_total, 
+                     ci = TRUE, desc = F, legend = T) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
+
+
+plot_b_tot <- plot_choices(df = specr_total, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n Total Effect")
+
+jpeg("Figures/Aim2/TotalEffect_Multiverse.jpeg", units = "in",
+     width = 10, height = 5, res = 300)
+
+cowplot::plot_grid(plot_a_tot, plot_b_tot, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 2),
+                   label_fontfamily = "Times", label_size = 12)
+
+dev.off()
+
+```
+
+
+### A/B path 
+
+```{r}
+specr_apth <- mediation_multiverse %>% 
+  filter(Effect == "Apath")
+specr_apth$controls <- "Age + Race + Sex"
+
+
+plot_a <- plot_curve(df = specr_apth, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
+
+plot_b <- plot_choices(df = specr_apth, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n A-path Effect")
+
+jpeg("Figures/Aim2/Apath_Multiverse.jpeg", units = "in",
+     width = 10, height = 5, res = 300)
+
+cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 2),
+                   label_fontfamily = "Times", label_size = 12)
+
+dev.off()
+
+```
+
+
+
+```{r}
+specr_bpth <- mediation_multiverse %>% 
+  filter(Effect == "Bpath")
+specr_bpth$controls <- "Age + Race + Sex"
+
+
+plot_a <- plot_curve(df = specr_bpth, 
+                     ci = TRUE, desc = F, legend = F) +
+  labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
+
+plot_b <- plot_choices(df = specr_bpth, choices = c("X", "Y", "M"), desc = F) +
+  labs(y = "Variables", x = "Ordered Specification Curve \n B-path Effect")
+
+#jpeg("Figures/Aim2/Bpath_Multiverse.jpeg", units = "in",
+#    width = 10, height = 5, res = 300)
+
+cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 2),
+                   label_fontfamily = "Times", label_size = 12)
+
+#dev.off()
+
+```
+
+
+### Within Path by PDS type Sig %
+
+```{r message=FALSE}
+mediation_multiverse %>% 
+  dplyr::group_by(Effect, M) %>% 
+  mutate(N_Effect = n()) %>% 
+  filter(p.value <= .05)  %>% 
+  dplyr::summarize(count_sig = n()) %>% 
+  group_by(Effect, M) %>% 
+  dplyr::summarize(perc_sig = round((count_sig/45),2), count_sig)
+  
+```
+
+
+## Plotting Multiverse within factors/measures
+
+### Within Factor Estimates
+
+Here we provide an example of how estimates can vary across factor derived scores across the 5 DVs for the parent reported PDS scores. Below, we plot the beta estimate + 95% CI for family factor (filled square) for each of the 5 DVs, In addition to this, we include the beta estimates for each o the 5 DVs for the parent reported PDS and the following factors:
+
+* Parent Factor (Circle)
+* Demographic Factor (Triangle)
+* Child Factor (X)
+
+
+These helps visualize how much a variable can vary in it's indirect & direct effect w/ between the IV (environmental factors) and DVs (brain outcomes)
+
+```{r}
+color_1 <- cbPalette <- c("black", "chocolate1", "firebrick", "slateblue", "turquoise4")# six colours for six factors
+
+#jpeg("Figures/Aim2/WithinFactor_betas.jpeg", units = "in",
+#     width = 10, height = 6, res = 250)
+
+mediation_multiverse %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) +
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 16, # circle
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Par Fact", M %in% "PDS Par")) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 17, # triangle
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Demo Fact", M %in% "PDS Par")) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 18, # X
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Child Fact", M %in% "PDS Par")) + # subset data for factor + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+#dev.off()
+```
+
+
+### Within Measure Estimates
+
+Here we provide an example of how estimates can vary across individual measures across the 5 DVs for the parent reported PDS scores. Below, we plot the beta estimate + 95% CI for family factor (filled square) for each of the 5 DVs, In addition to this, we include the beta estimates for each of the 5 DVs for the parent reported PDS and the following measures:
+
+* FES Youth
+* FES Parent
+* Parental Monitoring
+* Parental Acceptance
+* Avg Income/Education 
+
+"FES_youth","FES_parent",
+       "PMON","CRPBI","Avg_IncomeEduc"
+
+These helps visualize how much a variable can vary in it's indirect & direct effect w/ between the IV (environmental factors) and DVs (brain outcomes)
+
+```{r}
+color_1 <- cbPalette <- c("black", "chocolate1", "firebrick", "slateblue", "turquoise4")# six colours for six factors
+
+#jpeg("Figures/Aim2/WithinMeasure_betas.jpeg", units = "in",
+#     width = 10, height = 6, res = 250)
+
+mediation_multiverse %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) +
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 1, # circle
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Yth", M %in% "PDS Par")) + # subset data for FES youth + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 3, # +
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Par", M %in% "PDS Par")) + # subset data for FES parent + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 4, # x
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "PMON", M %in% "PDS Par")) + # subset data for Parental monitoring + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 5, # diamond
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Par Accept", M %in% "PDS Par")) + # subset data for Parental acceptance + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 8, # star
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Avg IncEdu", M %in% "PDS Par")) + # subset data for Avg Inc/Edu + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome") +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+#dev.off()
+```
+
+
+Reduced to only indirect & direct effects
+```{r}
+
+IndDir_A <- mediation_multiverse %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) +
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 16, # circle
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Par Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 17, # triangle
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Demo Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 18, # diamond
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Child Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "Square = FamEnv Factor; Circle: Parent Factor \n Triangle = Demographic Factor; X = Child Factor"
+       ) +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+
+
+IndDir_B <- mediation_multiverse %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) +
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 1, # circle
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Yth", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for FES youth + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 3, # +
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Par", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for FES parent + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 4, # x
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "PMON", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Parental monitoring + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 5, # diamond
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Par Accept", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Parental acceptance + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 8, # star
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Avg IncEdu", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Avg Inc/Edu + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "Square = FamEnv Factor; Circle = FES Yth;  Plus = FES; \n X = PMON; Diamond = CRPBI; Asterisk = Avg Inc/Edu"
+       ) +
+  scale_colour_manual(values = color_1)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank(),
+        legend.position = "none")
+
+
+#jpeg("Figures/Aim2/WithinFactMeasure_DirInd.jpeg", units = "in",
+#     width = 9, height = 5, res = 300)
+
+#IndDir_A / IndDir_B + plot_layout(guides = 'collect')
+
+cowplot::plot_grid(IndDir_A, IndDir_B, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 1),
+                   label_fontfamily = "Times", label_size = 14)
+#dev.off()
+
+```
+
+
+
+Reduced to rsfmri to visual differences in closely clustered data that are scaled diff in structural estimates
+```{r}
+color_2 <- cbPalette <- c("slateblue", "turquoise4")
+
+IndDir_A_rsf <- mediation_multiverse %>% 
+  filter(Y == "R AmygCON" | Y == "L AmygCON") %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) +
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 16, # circle
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Par Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 17, # triangle
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Demo Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 18, # diamond
+             position = position_jitterdodge(), 
+             data = . %>%  filter(X %in% "Child Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "Square = FamEnv Factor; Circle: Parent Factor \n Triangle = Demographic Factor; X = Child Factor"
+       ) +
+  scale_colour_manual(values = color_2)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank())
+
+
+
+IndDir_B_rsf <- mediation_multiverse %>% 
+  filter(Y == "R AmygCON" | Y == "L AmygCON") %>% 
+  filter(Effect == "Direct" | Effect == "Indirect") %>% 
+  ggplot(aes(colour = Y)) +
+  geom_errorbar(aes(x = Y, y = estimate,
+                    ymin = conf.low, ymax = conf.high), 
+                 width = .1, alpha = .5, 
+                data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par")) +
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 15, # filled square
+             data = . %>%  filter(X %in% "FamEnv Fact", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for factor + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 1, # circle
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Yth", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for FES youth + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 3, # +
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "FES Par", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for FES parent + par puberty
+  
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 4, # x
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "PMON", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Parental monitoring + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 5, # diamond
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Par Accept", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Parental acceptance + par puberty
+  geom_point(aes(x = Y, y = estimate), fill = "white", shape = 8, # star
+             position = position_jitterdodge(),
+             data = . %>%  filter(X %in% "Avg IncEdu", M %in% "PDS Par", 
+                                  Effect %in% c("Direct", "Indirect"))) + # subset data for Avg Inc/Edu + par puberty
+  
+  labs(y = "Beta Estimates", 
+       colour = "Brain Outcome"
+       #caption = "Square = FamEnv Factor; Circle = FES Yth;  Plus = FES; \n X = PMON; Diamond = CRPBI; Asterisk = Avg Inc/Edu"
+       ) +
+  scale_colour_manual(values = color_2)+
+  facet_wrap(~Effect, scale = "free")+
+  theme_minimal()+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), 
+        axis.line.x = element_blank(), axis.text.x = element_blank(),
+        legend.position = "none")
+
+
+#jpeg("Figures/Aim2/WithinFactMeasure_rfMRIonly_DirInd.jpeg", units = "in",
+#     width = 9, height = 5, res = 300)
+
+cowplot::plot_grid(IndDir_A_rsf, IndDir_B_rsf, ncol = 1, align = "v", axis = 'tblr',
+                       labels = c('A', 'B'), rel_heights = c(1, 1),
+                   label_fontfamily = "Times", label_size = 14)
+#dev.off()
+
+```
+
+## Association different factors/items
+
+To help with the interpretability/overlap of the effects in the above, we provide the pearson product correlations below. Some values may be opposite direction of others, such as Demographics and Family environment factors.
+
+
+We summarize these correlations in a table and a shaded plot below. Some information about how to use the plotting function, see the [corrplot information](https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html). The plot includes significance values for each correlation:
+
+* < 05 ~ *
+* < .01 ~ **
+* < .001 ~ ***
+* correlations with sig values are  > .05 are blank
+
+```{r}
+var_list = data.frame(
+  # Covariates
+  "Age" = data$Age, "Sex" = data$sex_r,
+  # IVS
+  "FamEnv_Fact" = data$FamEnv_Fact, 
+  "Demo_Fact" = data$Demo_Fact, 
+  "Child_Fact" = data$Child_Fact, 
+  "Par_Fact" = data$Par_Fact,
+  "FES_Yth" = data$FES_youth,"FES_Par" = data$FES_parent, 
+  "PMON" = data$PMON,"Par_Accept" = data$CRPBI, "Avg_IncEdu" = data$Avg_IncomeEduc,
+  # Mediators
+  "Par_PDS" = data$p_puberty,"Yth_PDS" = data$y_puberty,"ParYth_PDS" = data$avg_puberty,
+  # Dependent variables
+  "Amyg_Vol" = data$Amygdala_vol,
+  "ACC_CT" = data$ACC_CT,"ACC_CA" = data$ACC_CA,
+  "L_AmygCON" = data$L_AmygCing_rest, "R_AmygCON" = data$R_AmygCing_rest
+)
+  
+
+
+#Var_corr = cor(var_list, use = "pairwise", method = "pearson")
+Var_corr = rcorr(as.matrix(var_list), type = "pearson")
+
+# rename column/row names for r-values to updated printed table
+
+colnames(Var_corr$r) <- c("1","2","3","4","5","6","7","8","9","10","11","12",
+                          "13","14","15","16","17","18","19")
+rownames(Var_corr$r) <- c("1. Age", "2. Sex", "3. FamEnv Fact", 
+                         "4. Demo Fact", "5. Child Fact", "6, Par Fact",
+                         "7. FES Yth", "8. FES Par", "9. PMON", "10. Par Accept",
+                         "11. Avg IncEdu", "12. PDS Par", "13. PDS Yth",
+                         "14. PDS ParYth", "15. Amyg Vol", "17. ACC CT",
+                         "17. ACC CA", "18. L AmygCON", "19. R AmygCON")
+
+knitr::kable(Var_corr$r, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+#jpeg("Figures/Descriptives/Correlations_Vars.jpeg", units = "in",
+#     width = 10, height = 6, res = 250)
+corrplot(Var_corr$r, type = "upper", 
+         method =  "color", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',#order = 'AOE', 
+         p.mat = Var_corr$P,
+         sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.6,
+         insig = 'label_sig', pch.col = 'black',
+         mar=c(1, 1, 1, 1))
+
+#dev.off()
+```
+
+### Subsample Models to Validate Results
+
+Selecting a random subsample of 135 models to validate
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(1989)
+
+subsample_models <- mediation_multiverse %>% 
+  filter(Effect == "Indirect") %>%  # we are looking to subsample only our 135 unique models, not all effect types
+  dplyr::select(X, Y, M) %>% 
+  sample_n(tbl = .,
+           size = 6,
+           replace = FALSE)
+
+write.csv(x = subsample_models, 
+          file = "./subsample_N6_models.csv", 
+          row.names = F)
+```
+
+
+Saving dataset to validate models on, e.g., simply selecting primary variables from the 128 variable list. This data will be used for coauthor, FH, to validate the random subsample of `r length(subsample_models)`
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+sub_data <- data %>% 
+  # Covariates
+  dplyr::select(subjectkey, Age, sex_r, race_r,
+  # IVS
+  FamEnv_Fact, Demo_Fact, Child_Fact, Par_Fact, FES_youth, FES_parent, 
+  PMON, CRPBI, Avg_IncomeEduc,
+  # Mediators
+  p_puberty, y_puberty,avg_puberty,
+  # Dependent variables
+  Amygdala_vol, ACC_CT, ACC_CA, L_AmygCing_rest, R_AmygCing_rest)
+
+write.csv(x = sub_data, 
+          file = "./sub_data.csv", 
+          row.names = F)
+```
+
+
+
+
+
+

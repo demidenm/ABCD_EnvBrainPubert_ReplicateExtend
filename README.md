@@ -14,13 +14,19 @@ the Stage 1 folder includes two folders: Manuscript and Code.
   +	*Code*: This folder includes the R Markdown code (and .html output) of template code that will be used for the final analyses. Each of the for steps have self-contained explanations of steps within the file and the associated methods/packages linked 
     + (1) Part1_AggregateData is used to compile the data that into a single .csv file used; 
     + (2) Part2_CreateVars_Descriptives performs exclusion criteria, variable creation/selection (consistent w/ original work) and puts it into a dataset; 
-    + (3) fits the factors for our models and saves the individual scores for each subject;
-    + (4) uses fake data to demonstrate the code for the replication (Aim 1) and multiverse extension (Aim 2) that will be used with the full data.
+    + (3) Part3_ExtrractFactorScores fits the factors for our models and saves the individual scores for each subject;
+    + (4) Part4_MediationSpecificationCurve uses fake data to demonstrate the code for the replication (Aim 1) and multiverse extension (Aim 2) that will be used with the full data.
 
 The associated Stage 1 preregistration for Aim 1 can be found at: https://doi.org/10.17605/OSF.IO/GXK96
 
 ## Stage 2 Analyses/Results
-The code will be added to a subsequent folder with the associated results upon completion of analyses.
+the Stage 2 folder includes the code folder with the R .rmd and .html files. There were only minor changes between
+the preregistered and final code used. By placing the R code within the same folder where the archived data is downloaded, e.g. ABCDStudyNDA_1182451, the script was tested on Mac and Window systems. The R version used for each test >v3.8   
++	*Code*: 
+  + (1) Part1_AggregateData a typo for two brain measures were updated; 
+  + (2) Part2_CreateVars_Descriptives; 
+  + (3) Part3_ExtrractFactorScores;
+  + (4) Part4_MediationSpecificationCurve: uses real data as opposed to fake data in preregistration
 
 
 

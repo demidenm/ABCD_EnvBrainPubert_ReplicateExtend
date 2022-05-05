@@ -1,0 +1,572 @@
+---
+title: "Part 3: Extracting Factor Scores"
+author: "<h3>by Michael Demidenko</h3>"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: yes
+    number_sections: yes
+    toc_depth: 2
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+    code_folding: hide
+    self_contained: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+tags: []
+subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
+---
+# Rmd Description
+
+This is Part 3 for the project focused on the extension and multiverse analysis of a publication in Development and Psychopathology [2020](www.doi.org/10.1017/S0954579419000580)
+
+> This document contains code for fitting the factors and extracting factor scores 
+
+
+Unlike Part 1 and Part 2, here we use a statistical package [lavaan](https://www.jstatsoft.org/article/view/v048i02) to perform our factor analyses. If you're unfamiliar with lavaan syntax and running mediation using this function, please consider reviewing the informational links below
+
+*Note: the option for this rmarkdown is `code_folding: hide`, so the code is hidden. Please select `Code` --> `Show All Code` to unhide all code blocks. Otherwise, in each section you can simply click the `Code` button to show the respective code chunk.*
+
+* Useful R/Mplus links:
+    + Lavaan [cran page](https://cran.r-project.org/web/packages/lavaan/lavaan.pdf)
+    + Lavaan [syntax guide](http://www.structuralequations.com/resources/Basic_lavaan_Syntax_Guide_Aug1_2013.pdf)
+    + Using Lavaan to fit [CFA](https://lavaan.ugent.be/tutorial/syntax2.html)
+    + Lavaan [fixing parameters](https://lavaan.ugent.be/tutorial/tutorial.pdf)
+
+***
+***
+
+# Packages {.tabset}
+
+## Required packings, install
+```{r message=FALSE, warning=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(cowplot, tidyverse, kableExtra, corrplot, multiplex, MplusAutomation,lavaanPlot, semPlot, lavaan, parameters)
+```
+
+## Load packages
+
+At each instance, load packages.
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(tidyverse) # piping, descriptives, etc
+library(kableExtra) # for table formatting
+library(corrplot) # diff corr plot figures
+library(lavaan) # running lavaan Factor models +  mediation 
+library(lavaanPlot)
+library(semPlot) # plotting lavaan model as figured
+library(parameters) # reporting lavaan parameters in table
+library(glue) # past values within model syntax
+```
+
+
+## Loading .csv data
+
+Here we use the dataset saved from Step 2
+
+
+```{r message=FALSE, warning=FALSE}
+# load data that wsa written above
+abcd = read_csv("./data/ABCD_Updated_2022_04_15.csv")
+
+```
+
+***
+***
+
+
+# Fit CFA models {.tabset}
+
+The [original study](www.doi.org/10.1017/S0954579419000580) focused on a single overarching Family Environment (FamEnv) factor. You can find this factor in their supplemental materials [here](https://static.cambridge.org/content/id/urn:cambridge.org:id:article:S0954579419000580/resource/name/S0954579419000580sup001.docx). In this document, we reproduce the overarching FamEnv factor that the authors fit in `Mplus` using `lavaan.` Then, given our focus from the broad --> specific for environmental variables, to understand how the results converge in a multiverse analysis, we also fit the Demographic, Parent Report and Child report factors, independently. 
+
+For each reported factor, we include several steps:
+
+1. Fit Factor Model using `lavaan::cfa()`
+  + When factors are ordinal/nominal, we include them in `ordered =`
+  + Because we want to approximate values as much as the original work, which did it in Mplus, I `mimic =` *Mplus*
+2. Report Model Output
+  + I report the model using the [parameters](https://www.rdocumentation.org/packages/parameters/versions/0.15.0) packages with [model_parameters](https://www.rdocumentation.org/packages/parameters/versions/0.14.0/topics/model_parameters)
+3. Report Model Fit Statistics
+  + First, we provide the model fit summary using `summary`
+  + Second, we use [lavInspect](https://www.rdocumentation.org/packages/lavaan/versions/0.6-9/topics/lavInspect) to report several model matrices used to fit the model. This is described more [here](https://lavaan.ugent.be/tutorial/inspect.html)
+4. Plot Model
+  + To plot the structure of our model and the standardized coefficients, we use [lavaanPlot](https://www.alexlishinski.com/post/lavaanplot-0-5-1/) or [semPaths](http://sachaepskamp.com/documentation/semPlot/semPaths.html)
+
+Given that some of the values exported from lavaan vary slightly from those exported in Mplus, it is worth to mention the RE: standardized coefficients as these are what we will focus on. First, `std.all` standardizes the factor loadings by the standard deviation of both the predictor (the factor, X) and the outcome (the item, Y), this is similar to the `STDYX` output in Mplus. Second, `std.lv` the variance standardization method Std.lv, we only standardize by the predictor (the factor, X). This is similar to the `STD` output in 
+
+## Full Env Model {.tabset}
+
+We begin fitting the overarching factor. This is the bifactor model from the original work. It simultaneously fits the `child subfactor`, which includes:
+
+* Parental monitoring items 1 - 5 loaded onto PMON factor
+* Parental Acceptance items 1 - 5 loaded onto CRPBI factor
+* FES youth items 1 - 9 loaded onto FES_y factor
+
+the `Parent Factor`, which includes:
+
+* FES parent items1-, 6, 8, consistent with original paper
+* KSADS parental-child conflict
+
+and the `demographic factor`, which includes:
+
+* Planned Pregnancy
+* Parental Income
+* Parental Education
+* Parental Separation
+* Parental Psychopath (ASRS t-score)
+
+Consistent with the original work, all variables, with the exception of income and parental psychopathology, are entered as categorical to the `ordered = ` option. The model uses a `weighted lest squares (DWLS)` estimation. This is consistent with the exogenous categorical variable instructions for [lavaan](https://lavaan.ugent.be/tutorial/cat.html). While not described in the original paper, but later clarified by the authors, we use `std.lv = TRUE` to fixed all variance of  latent variables (as per instructions [here](https://lavaan.ugent.be/tutorial/syntax2.html) and [here](https://cran.r-project.org/web/packages/lavaan/lavaan.pdf)). Without this, whether in Mplus or R, this model will **not converge**.
+
+As a reminder, in lavaan `=~' indicates a factor loading, whereby the factors are on the left and the loadings on the right.
+
+```{r}
+set.seed(1000)
+
+Fam_env <- '
+# Child Factor
+PMON =~ PMon_yQ1 + PMon_yQ2 + PMon_yQ3 + PMon_yQ4 + PMon_yQ5 
+CRPBI =~ CRPBI_yQ1 + CRPBI_yQ2 + CRPBI_yQ3 + CRPBI_yQ4 + CRPBI_yQ5
+FES_y =~ FES_yQ1 + FES_yQ2 + FES_yQ3 + FES_yQ4 + FES_yQ5 + FES_yQ6 + FES_yQ7 + FES_yQ8 + FES_yQ9
+
+Child =~ PMON + CRPBI + FES_y
+
+# Parent Factor
+Parent =~ FES_pQ1 + FES_pQ2 + FES_pQ3 + FES_pQ4 + FES_pQ5 + FES_pQ6 + FES_pQ8 + KSADSpConf
+
+# Demographic
+Demo =~ Sep_Status + Par_Inc + Par_Edu + Pln_Preg + ASRS_t
+
+
+# Second order factor
+#     Family env
+FE =~ Child + Parent + Demo
+
+'
+
+Fam_env_fact <- lavaan::cfa(model = Fam_env,
+                        data = abcd, estimator = "DWLS",
+                        missing = "pairwise",
+                        ordered = c(
+                          # Ordered all Child Report Items
+                          "PMon_yQ1","PMon_yQ2","PMon_yQ3","PMon_yQ4","PMon_yQ5",
+                          "CRPBI_yQ1","CRPBI_yQ2","CRPBI_yQ3","CRPBI_yQ4",
+                          "CRPBI_yQ5", "FES_yQ1","FES_yQ2","FES_yQ3","FES_yQ4",
+                          "FES_yQ5","FES_yQ6","FES_yQ7","FES_yQ8","FES_yQ9",
+                          # Ordered all Parental Report Items
+                          "FES_pQ1", "FES_pQ2","FES_pQ3", "FES_pQ4","FES_pQ5","FES_pQ6",
+                          "FES_pQ8","KSADSpConf",
+                          # Ordered all Demo items except Income + psychopathology 
+                          "Sep_Status","Par_Edu","Pln_Preg"),
+                        std.lv = TRUE # Fixing all latent var variances
+                        ) 
+```
+
+### Model output (FE)
+
+The `FamEnv` factor model is reported in the table below. The table includes the output from the `model_parameters` package. We report the standardized coefficients here. The table includes:
+
+* `From --> To` paths
+* standardized estimate/coefficient
+* standard error
+* 95% confidence interval
+* z value w/ associated significance level.
+
+```{r message=FALSE, warning=FALSE}
+FamEnv_pars <-model_parameters(Fam_env_fact,standardize = TRUE) 
+
+kbl(FamEnv_pars, digits = 4, booktabs = TRUE,
+    caption = "Family Environment - CFA Results, Coefficients are Standardized") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+```
+
+### Model Fit stats (FE)
+
+Here we include a more extensive summary of fit statistics ($$\chi^2$$, CFI/TFI, RMSEA, SRMR) and parameter estimates (unstandardized coefficients, intercepts, residuals and standardized coefficients). This first table includes traditional output that you are likely familiar with seeing in Mplus, if you have run SEM in there. 
+
+1. We get the lavaan version number and the number of iterations performed for this model to end normally. 
+2. Then we get our estimator, `DWLS`, which we selected and the optimization function, such as `NLMINB.` As described [here](https://users.ugent.be/~yrosseel/lavaan/lavaan2.pdf), by default lavaan uses this method, but others can be chosen. Then we also see the number of parameters that are free to vary in the model.
+3. Next we get the number of observations and missing patterms (recall, we use pairwise deletion for missing values)
+4. OUr Chi-sq, degrees of freedom and p-value are provided in the `Model Test User Model`.
+5. We get our TLI/CFI, RMSEA, SRMR and WRMR.
+
+Given that we set `std.lv = TRUE`, you will can confirm in the `variance` part of the output that all factor variances under `estimate = 1.00`
+
+```{r message=FALSE, warning=FALSE}
+summary(Fam_env_fact,
+        standardized=TRUE, 
+        fit.measures = TRUE)
+
+```
+
+Below are output values from lavInspect(). lavInspect provides model matrices that are used to represent the model, all free parameters are nonzero. For brevity, this code chunk is available in R but not printed in the .html output.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+lavInspect(Fam_env_fact)
+```
+
+### plot model parent (Fam_Env)
+
+Below we plot the `FamEnv` factor using the lavaanPlot. More information about this plotting method can be found [https://cran.r-project.org/web/packages/lavaanPlot/vignettes/Intro_to_lavaanPlot.html](https://cran.r-project.org/web/packages/lavaanPlot/vignettes/Intro_to_lavaanPlot.html). A helpful resources on *graph_options* and *node_options* can be found [here](https://rich-iannone.github.io/DiagrammeR/graphviz_and_mermaid.html)
+
+In the plot we include the standardized coefficients, rounded to 3 decimal places
+
+```{r message=FALSE, warning=FALSE}
+lavaanPlot(model = Fam_env_fact,
+           graph_options = list(overlap = "false", font_size = "30", rankdir = "LR"),
+           node_options = list(shape = "box", fontname = "Times"),
+           coefs = TRUE,
+           stand = TRUE,
+           covs = FALSE,
+           digits = 3)
+```
+
+
+## Child Model {.tabset}
+
+Using the same procedures described above, below we fit the Child Factor. This model simultaneously fits the `child factor (C)` which includes:
+
+* Parental monitoring items 1 - 5 loaded onto PMON factor
+* Parental Acceptance items 1 - 5 loaded onto CRPBI factor
+* FES youth items 1 - 9 loaded onto FES_y factor
+
+### Specifying factor model (C)
+
+Similar to the `FamEnv` factor, we use `lavaan::cfa` to fit out CFA for the `Child_Fact`. 
+
+```{r warning=FALSE}
+set.seed(1000)
+
+child_model <- '
+PMON =~ PMon_yQ1 + PMon_yQ2 + PMon_yQ3 + PMon_yQ4 + PMon_yQ5 
+
+CRPBI =~ CRPBI_yQ1 + CRPBI_yQ2 + CRPBI_yQ3 + CRPBI_yQ4 + CRPBI_yQ5
+
+FES_y =~ FES_yQ1 + FES_yQ2 + FES_yQ3 + FES_yQ4 + FES_yQ5 + FES_yQ6 + FES_yQ7 + FES_yQ8 + FES_yQ9
+
+CF =~ PMON + CRPBI + FES_y
+'
+
+# fiml not available with categorical, only pairwise
+Child_Fact <- lavaan::cfa(model = child_model, 
+                          data = abcd, 
+                          missing = "pairwise",
+                          ordered = c("PMon_yQ1","PMon_yQ2","PMon_yQ3",
+                                      "PMon_yQ4","PMon_yQ5","CRPBI_yQ1",
+                                      "CRPBI_yQ2","CRPBI_yQ3","CRPBI_yQ4",
+                                      "CRPBI_yQ5", "FES_yQ1","FES_yQ2",
+                                      "FES_yQ3","FES_yQ4","FES_yQ5", 
+                                      "FES_yQ6","FES_yQ7","FES_yQ8",
+                                      "FES_yQ9"),
+                          mimic = "Mplus",
+                          std.lv = TRUE # Fixing all latent var variances
+                          ) 
+```
+
+### Model output (C)
+
+The `Child Fact` model is reported in the table below. Again, we select to report the standardized coefficients here. 
+
+```{r message=FALSE, warning=FALSE}
+Child_pars <-model_parameters(Child_Fact,
+                               standardize = TRUE) 
+
+kbl(Child_pars, digits = 4, booktabs = TRUE,
+    caption = "Child Factor - CFA Results, Coefficients are Standardized") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+```
+
+### Model Fit stats (C)
+
+As before, here we provide the more extensive reporting of model parameters and fit statistics. Refer back to the top for details/links. 
+
+
+```{r message=FALSE, warning=FALSE}
+summary(Child_Fact,
+        standardized=TRUE, 
+        fit.measures = TRUE)
+
+```
+
+Below are output values from lavInspect().
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+lavInspect(Child_Fact)
+```
+
+### plot model parent (C)
+
+Below we plot the `Child Fact` factor using the lavaanPlot. 
+
+```{r message=FALSE, warning=FALSE}
+lavaanPlot(model = Child_Fact,
+           graph_options = list(overlap = "false", font_size = "30", rankdir = "LR"),
+           node_options = list(shape = "box", fontname = "Times"),
+           coefs = TRUE,
+           stand = TRUE,
+           covs = FALSE,
+           digits = 3)
+```
+
+## Demo Model {.tabset}
+
+Here we specfy the latent factor for the `demographic` variables, which includes:
+
+* Planned Pregnancy
+* Parental Income
+* Parental Education
+* Parental Separation
+* Parental Psychopath (ASRS t-score)
+
+### specifying demo (D)
+```{r warning=FALSE}
+set.seed(1000)
+
+Demo_model <- '
+Demo =~ Sep_Status + Par_Inc + Par_Edu + Pln_Preg + ASRS_t
+
+'
+
+Demo_Fact <- lavaan::cfa(model = Demo_model, 
+                         data = abcd, 
+                         missing = "pairwise",
+                         ordered = c("Sep_Status","Par_Edu","Pln_Preg"),
+                         mimic = "Mplus",
+                         std.lv = TRUE # Fixing all latent var variances
+                         ) 
+```
+
+
+### Model output (D)
+
+The `Demo Fact` model is reported in the table below. Again, we select to report the standardized coefficients here. 
+
+```{r message=FALSE, warning=FALSE}
+Demo_pars <-model_parameters(Demo_Fact,
+                               standardize = TRUE) 
+
+kbl(Demo_pars, digits = 4, booktabs = TRUE,
+    caption = "Demo Factor - CFA Results, Coefficients are Standardized") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+```
+
+### Model Fit stats (D)
+
+As before, here we provide the more extensive reporting of model parameters and fit statistics. Refer back to the top for details/links. 
+
+
+```{r message=FALSE, warning=FALSE}
+summary(Demo_Fact,
+        standardized=TRUE, 
+        fit.measures = TRUE)
+
+```
+
+Below are output values from lavInspect().
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+lavInspect(Demo_Fact)
+```
+
+### plot model parent (D)
+
+Below we plot the `Demo Fact` factor using the lavaanPlot. 
+
+```{r message=FALSE, warning=FALSE}
+lavaanPlot(model = Demo_Fact,
+           graph_options = list(overlap = "false", font_size = "30", rankdir = "LR"),
+           node_options = list(shape = "box", fontname = "Times"),
+           coefs = TRUE,
+           stand = TRUE,
+           covs = FALSE,
+           digits = 3)
+```
+
+## Parent Model {.tabset}
+
+Here we specfy the latent factor for `Parent Fact`, which includes:
+
+* FES parent items1-, 6, 8, consistent with original paper
+* KSADS parental-child conflict
+
+### Specify Model (P)
+
+```{r warning=FALSE}
+set.seed(1000)
+
+parent_model <- '
+
+Parent =~ FES_pQ1 + FES_pQ2 + FES_pQ3 + FES_pQ4 + FES_pQ5 + FES_pQ6 + FES_pQ8 +KSADSpConf
+
+'
+
+Par_Fact <- lavaan::sem(model = parent_model, 
+                        data = abcd, 
+                        missing = "pairwise",
+                        ordered = c("FES_pQ1", "FES_pQ2","FES_pQ3", 
+                                    "FES_pQ4","FES_pQ5", "FES_pQ6",
+                                    "FES_pQ8","KSADSpConf"),
+                        mimic = "Mplus",
+                        std.lv = TRUE # Fixing all latent var variances
+                         ) 
+```
+
+
+### Model output (P)
+
+The `Parrent Fact` model is reported in the table below. Again, we select to report the standardized coefficients here. 
+
+```{r message=FALSE, warning=FALSE}
+Par_pars <-model_parameters(Par_Fact,
+                               standardize = TRUE) 
+
+kbl(Par_pars, digits = 4, booktabs = TRUE,
+    caption = "Parent Factor - CFA Results, Coefficients are Standardized") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+
+```
+
+### Model Fit stats (P)
+
+As before, here we provide the more extensive reporting of model parameters and fit statistics. Refer back to the top for details/links. 
+
+
+```{r message=FALSE, warning=FALSE}
+summary(Par_Fact,
+        standardized=TRUE, 
+        fit.measures = TRUE)
+
+```
+
+Below are output values from lavInspect().
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+lavInspect(Par_Fact)
+```
+
+### plot model parent (P)
+
+Below we plot the `Par_Fact` factor using the lavaanPlot. 
+
+```{r message=FALSE, warning=FALSE}
+lavaanPlot(model = Par_Fact,
+           graph_options = list(overlap = "false", font_size = "30", rankdir = "LR"),
+           node_options = list(shape = "box", fontname = "Times"),
+           coefs = TRUE,
+           stand = TRUE,
+           covs = FALSE,
+           digits = 3)
+```
+
+
+***
+***
+
+
+# Save factor scores {.tabset}
+
+Up until this point, we have run four CFAs: 
+
+1. FamEnv (CHild+Parent+Demo)
+2. Child_Report
+3. Parent Report
+4. Demographics 
+
+In order to use these in our mediation analyses, we need to save a factor score for each participant in our dataset. In this step we extract the factor scores from each of the above CFA lavaan() models: Child, Demographic, and Parent. We achived this by using the [predict](https://www.journaldev.com/45290/predict-function-in-r) function in r, whereby we predict the values based on some data. Here, our prediction is based on the objects our fitted model via lavaan, i.e. `Child_Fact`, `Par_Fact`, `Demo_Fact`, `Fam_env_fact`. We use this model to predict the scores based on our data. We save these into a dataframe using [as.data.frame](https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/as.data.frame) and combine it with our complete data.
+
+## Extract Factor Scores (C,D,P, FamEnv)
+
+Here we use predict to save the Factor scores. Once these four factor scores are saved, we then combined the data using [cbind](https://statisticsglobe.com/cbind-r-command-example/). That way all of our data is in one place. However, because the `predict()` estimates values for all factors and subfactors, when we save these variables we want to ensure that we only save the factor scores we're interested in. 
+
+```{r warning=FALSE}
+FactorScores_chi <- as.data.frame(predict(Child_Fact, newdata = abcd))
+FactorScores_par <- as.data.frame(predict(Par_Fact, newdata = abcd))
+FactorScores_dem <- as.data.frame(predict(Demo_Fact, newdata = abcd))
+FactorScores_FamEnv <- as.data.frame(predict(Fam_env_fact, newdata = abcd))
+
+abcd_2 <- cbind(abcd, "Child_Score" = FactorScores_chi$CF, 
+                "Par_Score" = FactorScores_par$Parent, 
+                "Demo_Score" = FactorScores_dem$Demo, 
+                "FamEnv_Score" = FactorScores_FamEnv$FE) #  select only primary factors
+```
+
+Inverse the family factor score. In the pre-registrationa  the more complex function, `invert` was used. But given that we were only interested in changing the *direction* of the values, we used a simpler version here.
+```{r}
+#invert <- function(x){ ((x - max(x)) * -1) + min(x) }
+
+abcd_2$FamEnv_Score_r  <- abcd_2$FamEnv_Score * -1
+abcd_2$Par_Score_r  <- abcd_2$Par_Score * -1
+abcd_2$Demo_Score_r  <- abcd_2$Demo_Score * -1
+
+```
+
+## Association different factors/items
+
+Here we created a data.frame comprised of our overarching factor, Family Environment, our subfactors, Child Report, Parent Report and Demographics, as well as the average of the Parental monitoring, CRPBI, FES youth, FES parent, Parental Income and Parental education, which will be the varying independent variable in our multiverse analysis.
+
+We report these correlations in a table and a shaded plot.
+
+```{r}
+Factors = data.frame("Child_CFA" = abcd_2$Child_Score, 
+                     "Parent_CFA" = abcd_2$Par_Score,
+                     "Parent_CFA_inv" = abcd_2$Par_Score_r, 
+                  "Demo_CFA" = abcd_2$Demo_Score, 
+                  "Demo_CFA_inv" = abcd_2$Demo_Score_r, 
+                  "Fam_Env" = abcd_2$FamEnv_Score, 
+                  "Fam_Env_inv" = abcd_2$FamEnv_Score_r,
+                  "Par_Monitor"= abcd_2$PMON_y_mean, 
+                  "CRPBI" = abcd_2$CRPBI_mean, 
+                  "FES_parent" = abcd_2$FES_p_mean, "FES_youth" = abcd_2$FES_y_mean, 
+                  "Par_Education" = abcd_2$Par_Edu, "Par_Inc" = abcd_2$Par_Inc)
+
+Fact_corr = cor(Factors, use = "pairwise", method = "pearson")
+
+
+knitr::kable(Fact_corr, digits = 2) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, html_font = "Times") 
+
+corrplot(Fact_corr, type = "upper", 
+         method =  "shade", #title = "Pairwise Pearson r among variables", 
+         tl.cex = 0.7, tl.col = 'black',
+         mar=c(1, 1, 1, 1))
+```
+
+Here are the distributions for the factors in the data 
+
+```{r}
+Factors %>% 
+  pivot_longer(c(Child_CFA, Parent_CFA, Parent_CFA_inv, 
+                 Demo_CFA, Demo_CFA_inv, 
+                 Fam_Env, Fam_Env_inv), 
+  names_to = "Scale", values_to = "scores") %>% 
+  ggplot(aes(x = scores)) +
+  geom_density() +
+  facet_wrap(vars(Scale), ncol = 2, scales = "free") +
+  labs(x = "Scales", y = "Score Distributions", title = "Distributions of Factor Scores") +
+  theme_minimal()
+```
+
+
+## Save data 
+
+We save this new data with factor scores to use in the next step. 
+```{r warning=FALSE}
+write.csv(x = abcd_2, file = "./data/ABCD_wFactorScores_2022_04_15.csv")
+```
+
+

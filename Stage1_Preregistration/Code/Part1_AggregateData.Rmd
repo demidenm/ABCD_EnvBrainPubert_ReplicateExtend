@@ -285,7 +285,7 @@ cort_struct = read.abcd("ABCDStudyNDA_1182451/abcd_mrisdp101.txt") %>%
   select(subjectkey,eventname,
          L_ACC_thic = mrisdp_6, R_ACC_thic = mrisdp_80,
          L_ACC_area = mrisdp_308, R_ACC_area = mrisdp_382,
-         L_Cort_vol = mrisdp_602, R_Cort_vol = mrisdp_601)
+         L_Cort_vol = mrisdp_602, R_Cort_vol = mrisdp_603)# fixed
 
 QC_struct = read.abcd("ABCDStudyNDA_1182451/freesqc01.txt") %>% 
   select(subjectkey,eventname,
