@@ -1,0 +1,7 @@
+"X","Y","M"
+"Par Fact","ACC CA","PDS ParYth"
+"FamEnv Fact","ACC CT","PDS Yth"
+"Child Fact","L AmygCON","PDS Yth"
+"FamEnv Fact","Amygdala vol","PDS Yth"
+"Avg IncEdu","L AmygCON","PDS Yth"
+"Child Fact","Amygdala vol","PDS Par"
