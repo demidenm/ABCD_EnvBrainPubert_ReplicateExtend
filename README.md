@@ -30,6 +30,6 @@ the preregistered and final code used. By placing the R code within the same fol
 
 
 
-For information regarding this content please contact demidenm@umich.edu
+For information regarding this content please contact demidenko.michael@gmail.com
 
 
