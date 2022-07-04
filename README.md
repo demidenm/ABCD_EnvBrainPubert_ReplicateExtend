@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/459302500.svg)](https://zenodo.org/badge/latestdoi/459302500)
+
 # ABCD_EnvBrainPubert_ReplicateExtend
 
 The content here is for the replication and extension of **Thijssen et al (2020)** that is included in this folder.
