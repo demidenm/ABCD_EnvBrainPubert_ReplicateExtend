@@ -16,7 +16,7 @@ output:
     self_contained: yes
   pdf_document:
     toc: yes
-    toc_depth: '2'
+    toc_depth: '2' 
 tags: []
 subtitle: <h2><u>Extension and Multiverse assessment </u></h2>
 ---
@@ -71,7 +71,7 @@ Here we use the dataset saved from Step 2
 
 ```{r message=FALSE, warning=FALSE}
 # load data that wsa written above
-abcd = read_csv("./data/ABCD_Updated_2022_04_15.csv")
+abcd = read_csv("./ABCD_Updated_2022_07_11.csv")
 
 ```
 
@@ -504,7 +504,7 @@ abcd_2 <- cbind(abcd, "Child_Score" = FactorScores_chi$CF,
                 "FamEnv_Score" = FactorScores_FamEnv$FE) #  select only primary factors
 ```
 
-Inverse the family factor score. In the pre-registrationa  the more complex function, `invert` was used. But given that we were only interested in changing the *direction* of the values, we used a simpler version here.
+Inverse the family factor score. In the pre-registration  the more complex function, `invert` was used. But given that we were only interested in changing the *direction* of the values, we used a simpler version here.
 ```{r}
 #invert <- function(x){ ((x - max(x)) * -1) + min(x) }
 
@@ -530,7 +530,7 @@ Factors = data.frame("Child_CFA" = abcd_2$Child_Score,
                   "Fam_Env_inv" = abcd_2$FamEnv_Score_r,
                   "Par_Monitor"= abcd_2$PMON_y_mean, 
                   "CRPBI" = abcd_2$CRPBI_mean, 
-                  "FES_parent" = abcd_2$FES_p_mean, "FES_youth" = abcd_2$FES_y_mean, 
+                  "FES_parent" = abcd_2$FES_p_mean_r, "FES_youth" = abcd_2$FES_y_mean_r, 
                   "Par_Education" = abcd_2$Par_Edu, "Par_Inc" = abcd_2$Par_Inc)
 
 Fact_corr = cor(Factors, use = "pairwise", method = "pearson")
@@ -566,7 +566,39 @@ Factors %>%
 
 We save this new data with factor scores to use in the next step. 
 ```{r warning=FALSE}
-write.csv(x = abcd_2, file = "./data/ABCD_wFactorScores_2022_04_15.csv")
+write.csv(x = abcd_2, file = "./ABCD_wFactorScores_2022_07_11.csv")
+```
+
+***
+***
+
+# Cooking up data for Mplus {.tabset}
+
+In the event that the CFA needs to be compared in select cases in Mplus, the below code may be used to save .dat file for this.
+
+## Marking NA values
+
+Replacing `NA` with `99999` 
+
+```{r message=FALSE, warning=FALSE}
+Mplus_ABCD <- abcd %>% 
+  select(FES_pQ1:Par_Edu, Sep_Status, Pln_Preg, ASRS_t)
+
+
+# replace NA values with '99999'
+Mplus_ABCD[is.na(Mplus_ABCD)] <- 99999
+```
+
+## Saving `.dat` file
+
+Header names for .inp file
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+colnames(Mplus_ABCD)
 ```
 
 
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+library(MplusAutomation)
+write.dat(Mplus_ABCD, "Mplus_ABCD_Test.dat")
+
+```

@@ -76,7 +76,7 @@ Here we import the data that was created during Part 2 & 3, which includes our v
 
 
 ```{r message=FALSE, warning=FALSE}
-data <- read.csv("./data/ABCD_wFactorScores_2022_04_15.csv")
+data <- read.csv("../../stage1/ABCD_wFactorScores_2022_07_11.csv")
 ```
 
 `minor correction`, the preregistration missed the step which averaged the parent/child reported PDS score & the z-scored parental income and education variable. So we create these variables below.
@@ -107,8 +107,8 @@ data <- data %>%
       FamEnv_Fact = FamEnv_Score_r, Demo_Fact = Demo_Score_r,
       Par_Fact = Par_Score_r, Child_Fact = Child_Score,
       # IV: renaming variables
-      FES_youth = FES_y_mean, CRPBI = CRPBI_mean, PMON = PMON_y_mean,
-      FES_parent = FES_p_mean,
+      FES_youth = FES_y_mean_r, CRPBI = CRPBI_mean, PMON = PMON_y_mean,
+      FES_parent = FES_p_mean_r,
       # outcome brain
       Amygdala_vol = Amyg_Vol_z, ACC_CA = ACC_Area_z, 
       ACC_CT = ACC_Thick_z, 
@@ -136,8 +136,8 @@ Consistent with the preregistered [table 1](https://github.com/demidenm/ABCD_Env
 * Demographic Factor: Demo_Fact
 * Child  Factor: Child_Fact
 * Parent Factor: Par_Fact
-* FES Youth: FES_youth
-* FES Parent: FES_parent
+* FES Youth: FES_youth (reverse scored)
+* FES Parent: FES_parent (reverse scored)
 * Parental Monitoring: PMON
 * Parental Acceptance: CRPBI
 * z-scored Parental Income/Education: Avg_IncomeEduc
@@ -163,7 +163,7 @@ Consistent with the preregistered [table 1](https://github.com/demidenm/ABCD_Env
 * Sex: sex_r
 
 
-For purposes of coherence in abbreviations as we report in the manuscripte, we removed underscores (e.g., FamEnv_Fact --> FamEnv Fact) and renamed some variables as follows.
+For purposes of coherence in abbreviations as we report in the manuscript, we removed underscores (e.g., FamEnv_Fact --> FamEnv Fact) and renamed some variables as follows.
 FES_youth = FES Yth; FES_parent = FES Par; CRPBI = Par Accept; Avg IncomeEduc = Avg IncEdu; p_puberty = PDS Par; y_puberty = PDS Par; avg_puberty = PDS ParYth; L/R AmygCing_rest = L/R AmygCON.
 
 # Multiverse Function {.tabset}
@@ -432,10 +432,10 @@ total := c + (a*b)
     fit <-lavaan::sem(model = test, 
                       data = data,
                       se = "bootstrap",
-                      bootstrap = 500, 
+                      bootstrap = 5000, 
                       mimic = "Mplus"
                       )
-    model_parameters(fit)
+    model_parameters(fit, standardize = TRUE)
 ```
 
 After the initial instance, the R code to run this model is not ran. Instead, after running the model the first time, we save the table with the estimates and load them back into Rstudio to use in subsequent steps. This is to save on machine resources/time and to increase efficiency in knitting the final version of the .html document.
@@ -769,19 +769,46 @@ print(paste0(Reviewers))
 write.table(Reviewers, file = "./Authors_ReviewingReplication.txt", col.names = FALSE, row.names = FALSE, sep = "\t")
 ```
 
+## Plot Subjective Replication 
+
+```{r}
+subj_tally <- read.csv("./Output/Replication_Tally_plt.csv")
+
+colors <- cbPalette <- c("black", "chocolate1", "firebrick", "slateblue", "turquoise4")
+
+#jpeg("Figures/Aim1/Replication_Agreement.jpeg", units = "in",
+#     width = 10, height = 5, res = 300)
+subj_tally %>% 
+  ggplot(aes(x = Brain, y = Overall_Percent, fill = Brain)) +
+  geom_bar(stat = "identity") +
+  labs(col = "Replicated Estimates", caption = "Dotted, Dashed line = 50% Agreement")+
+  geom_hline(yintercept = .50, linetype = "dotdash", colour = "grey")+ 
+  ylim(c(0.0,1.0))+
+  ylab("Percentage Agreement (%)") +
+  xlab("")+
+  facet_wrap(~Effect)+
+  scale_fill_manual(values = colors)+
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), legend.title = element_blank(), 
+        legend.position = "bottom")
+
+#dev.off()
+```
 
 # Aim 2 {.tabset}
 
 ## Creating list of variables
 
 Here we create a list of variables that we will be using. For example, we are running models across different combinations of IV, DV, and Mediators. We add these to a list.
+
 In our function, we use `exapnd.grid` to create all permutations for our "X", "Y" and "M" columns that'll be used in the mediation model. We save this as as a matrix.
 
+Recall, we have reverse coded variables in prior R steps (such as FES youth, FES Parent, Par Factor in Part2 & 3) to maintain consistency in the interpretation. In otherwords, higher scores on the variable reflect more positive (i.e., less stressful) environment.
 
 ```{r}
 # list variables for mediation
 IVs = c("FamEnv_Fact","Demo_Fact","Child_Fact","Par_Fact",
-       "FES_youth","FES_parent",
+       "FES_youth","FES_parent", 
        "PMON","CRPBI","Avg_IncomeEduc")
 
 M = c("p_puberty","y_puberty","avg_puberty")
@@ -856,7 +883,7 @@ Below we can visualize this complete set out coefficients for our models. This o
 
 ```{r message=FALSE, warning=FALSE}
 # Load in multiverse tables
-mediation_multiverse <- read.csv("./Output/Multiverse_Table_April_2022.csv") 
+mediation_multiverse <- read.csv("./Output/Multiverse_Table_July_2022_renamed.csv") 
 
 mediation_multiverse %>% 
   kbl(digits = 4, booktabs = TRUE) %>% 
@@ -892,20 +919,20 @@ specr_direct$controls <- "Age + Race + Sex"
 
 
 plot_a <- plot_curve(df = specr_direct, 
-                     ci = TRUE, desc = F, legend = F) +
+                     ci = TRUE, desc = FALSE, legend = FALSE, null = 0) +
   labs(caption = "Blue = Significant Positive (p < .05); Red = Significant Negative (p < .05)")
 
-plot_b <- plot_choices(df = specr_direct, choices = c("X", "Y", "M"), desc = F) +
+plot_b <- plot_choices(df = specr_direct, choices = c("X", "Y", "M"), desc = F, null = 0) +
   labs(y = "Variables", x = "Ordered Specification Curve \n Direct Effect")
 
-jpeg("Figures/Aim2/DirectEffect_Multiverse.jpeg", units = "in",
-     width = 10, height = 5, res = 300)
+#jpeg("Figures/Aim2/DirectEffect_Multiverse.jpeg", units = "in",
+#     width = 10, height = 5, res = 300)
 
 cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'tblr',
                        labels = c('A', 'B'), rel_heights = c(1, 2),
                    label_fontfamily = "Times", label_size = 12)
 
-dev.off()
+#dev.off()
 
 ```
 
@@ -925,14 +952,14 @@ plot_b_ind <- plot_choices(df = specr_indirect, choices = c("X", "Y", "M"), desc
   labs(y = "Variables", x = "Ordered Specification Curve \n Indirect Effect")
 
 
-jpeg("Figures/Aim2/IndirectEffect_Multiverse.jpeg", units = "in",
-    width = 10, height = 5, res = 300)
+#jpeg("Figures/Aim2/IndirectEffect_Multiverse.jpeg", units = "in",
+#    width = 10, height = 5, res = 300)
 
 cowplot::plot_grid(plot_a_ind, plot_b_ind, ncol = 1, align = "v", axis = 'tblr',
                        labels = c('A', 'B'), rel_heights = c(1, 2),
                    label_fontfamily = "Times", label_size = 12)
 
-dev.off()
+#dev.off()
 ```
 
 
@@ -952,14 +979,14 @@ plot_a_tot <- plot_curve(df = specr_total,
 plot_b_tot <- plot_choices(df = specr_total, choices = c("X", "Y", "M"), desc = F) +
   labs(y = "Variables", x = "Ordered Specification Curve \n Total Effect")
 
-jpeg("Figures/Aim2/TotalEffect_Multiverse.jpeg", units = "in",
-     width = 10, height = 5, res = 300)
+#jpeg("Figures/Aim2/TotalEffect_Multiverse.jpeg", units = "in",
+#     width = 10, height = 5, res = 300)
 
 cowplot::plot_grid(plot_a_tot, plot_b_tot, ncol = 1, align = "v", axis = 'tblr',
                        labels = c('A', 'B'), rel_heights = c(1, 2),
                    label_fontfamily = "Times", label_size = 12)
 
-dev.off()
+#dev.off()
 
 ```
 
@@ -979,14 +1006,14 @@ plot_a <- plot_curve(df = specr_apth,
 plot_b <- plot_choices(df = specr_apth, choices = c("X", "Y", "M"), desc = F) +
   labs(y = "Variables", x = "Ordered Specification Curve \n A-path Effect")
 
-jpeg("Figures/Aim2/Apath_Multiverse.jpeg", units = "in",
-     width = 10, height = 5, res = 300)
+#jpeg("Figures/Aim2/Apath_Multiverse.jpeg", units = "in",
+#     width = 10, height = 5, res = 300)
 
 cowplot::plot_grid(plot_a, plot_b, ncol = 1, align = "v", axis = 'tblr',
                        labels = c('A', 'B'), rel_heights = c(1, 2),
                    label_fontfamily = "Times", label_size = 12)
 
-dev.off()
+#dev.off()
 
 ```
 

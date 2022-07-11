@@ -93,7 +93,7 @@ We are focusing on variables and analyses conducted described in Part 1 of the R
 
 ```{r message=FALSE, warning=FALSE}
 # load data that wsa written above
-abcd = read_csv("./data/ABCD_cooked_2022_04_15.csv")
+abcd = read_csv("./ABCD_cooked_2022_03_22.csv")
 
 ```
 
@@ -441,10 +441,10 @@ abcd_3 <- abcd_2 %>%
 
 In our multiverse we consider the effect of the broad overaching `family environment factor` the subfactors `Demographic`, `Parent` and `Child`. But we also consider the measurement items for measures that are fit in these factors, such as:
 
-* FES youth 
-* FES parent
-* CRPBI youth 
-* Parental monitoring 
+* FES youth (Higher scores indicate more *negative* aspects of environment)
+* FES parent (Higher scores indicate more *negative* aspects of environment)
+* CRPBI youth (Higher scores indicate more *positive* aspects of environment)
+* Parental monitoring ((Higher scores indicate more *positive* aspects of environment))
 
 Here we use the combination of `mutate` and [rowMeans](https://www.rdocumentation.org/packages/fame/versions/1.03/topics/rowMeans). This essentially takes for all values along the row for each variable that `starts_with()` a defined name, such as *FES_yQ* for the FES Youth measure which has Q1-Q9, and computes a mean for the row and saves it into the `FES_y_mean` variable in the dataset.
 
@@ -458,6 +458,20 @@ abcd_3 <- abcd_3 %>%
          PMON_y_mean = rowMeans(dplyr::select(., starts_with("PMon_yQ"))))
 
 
+```
+
+For purposes of the multiverse analyses, to have interpretation of the mean scores of FES, CRPBI and Parental Monitoring be in the same direction (e.g., higher scores == better environment) we reverse code the means scores of the FES items.
+```{r}
+# run inverse function on FES youth + parent
+abcd_3$FES_y_mean_r <- -1 * abcd_3$FES_y_mean
+abcd_3$FES_p_mean_r <- -1 * abcd_3$FES_p_mean
+
+# Compare old to new: FES direction in corr should be flipped, but magnitude should remain the same
+Orig_means <- abcd_3 %>%  select(FES_p_mean, FES_y_mean, CRPBI_mean, PMON_y_mean)
+New_means <- abcd_3 %>%  select(FES_p_mean_r, FES_y_mean_r, CRPBI_mean, PMON_y_mean)
+
+round(cor(Orig_means,use = "complete.obs",method = "pearson"), 3)
+round(cor(New_means,use = "complete.obs",method = "pearson"), 3)
 ```
 
 ### Composite Brain 
@@ -513,8 +527,8 @@ abcd_3$Amyg_Vol_z <- scale(x = abcd_3$Amyg_Vol_r, center = TRUE, scale = TRUE)
 ```
 
 Save updated dataset
-```{r message=FALSE, warning=FALSE}
-write.csv(x = abcd_3, file = "./data/ABCD_Updated_2022_04_15.csv")
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+write.csv(x = abcd_3, file = "./ABCD_Updated_2022_07_11.csv")
 ```
 
 ***
@@ -589,21 +603,25 @@ and finally our dependent brain variables:
 * Cingulo-opercular ~ Amygdala function connectivity
 
 ```{r message=FALSE, warning=FALSE}
+#jpeg("Figures/Descriptives/VariableDistributions.jpeg", units = "in",
+#     width = 8, height = 8, res = 300)
+
 abcd_3 %>% 
+  rename("L_AmygCON" = Lamyg_CingOperc, "R_AmygCON" = Ramyg_CingOperc) %>% 
   pivot_longer(c(Age, Par_Edu, Par_Inc,
                  p_puberty, y_puberty, ASRS_t,
-                 FES_y_mean, FES_p_mean, CRPBI_mean, PMON_y_mean,
+                 FES_y_mean_r, FES_p_mean_r, CRPBI_mean, PMON_y_mean,
                  KSADSpConf, Amyg_Vol_z, ACC_Area_z, ACC_Thick_z, 
-                 Lamyg_CingOperc, Ramyg_CingOperc), 
+                 L_AmygCON, R_AmygCON), 
   names_to = "Scale", values_to = "scores") %>% 
   ggplot(aes(x = scores)) +
   geom_density() +
   facet_wrap(vars(Scale), ncol = 3, scales = "free") +
   labs(x = "Scales", y = "Score Distributions", 
-       caption = "_y = youth, _p = parental; FES, CRPBI, PMON are averages of items.") +
+       caption = "_y = youth, _p = parental; FES (reverse coded), CRPBI, PMON are averages of items.") +
   theme_minimal()
 
-
+#dev.off()
 ```
 
 ## Correlation Matrices
